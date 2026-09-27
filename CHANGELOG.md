@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The matrix site footer now links to the source repository, a "report a problem"
+  issue and `CONTRIBUTING.md`, so a visitor landing on the published site has a
+  one-click way to the code and to report a wrong cell (issue #1).
+
+
 ## [0.1.1] - 2026-09-26
 
 ### Fixed
