@@ -298,6 +298,10 @@ def test_render_site(tmp_path: Path, sample_fixtures_dir: Path) -> None:
     assert (out / "data" / "vllm-0.30.0.json").read_bytes() == (results / "vllm-0.30.0.json").read_bytes()
     assert (out / ".nojekyll").is_file()
     assert "Built with Llama" in html  # Llama Community License 1.b.i(B)
+    # Footer: source repo, issue tracker and CONTRIBUTING (issue #1)
+    assert "https://github.com/redd34/canitoolcall" in html
+    assert "https://github.com/redd34/canitoolcall/issues/new/choose" in html
+    assert "https://github.com/redd34/canitoolcall/blob/main/CONTRIBUTING.md" in html
 
     data = json.loads((out / "matrix.json").read_text(encoding="utf-8"))
     cells = {(c["family"], c["engine"]): c for c in data["cells"]}
@@ -312,6 +316,7 @@ def test_render_site(tmp_path: Path, sample_fixtures_dir: Path) -> None:
     hrefs = [a.get("href") for t, a in parsed.tags if t == "link"]
     assert hrefs == ["../../../assets/style.css"]
     cell_html = page.read_text(encoding="utf-8")
+    assert "https://github.com/redd34/canitoolcall" in cell_html
     assert SAMPLE_ID in cell_html
     repro = f"--fixtures fixtures/qwen3-hermes/sample.jsonl --id {SAMPLE_ID} --strategy token --observed all"
     assert repro in cell_html
