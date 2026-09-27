@@ -266,6 +266,10 @@ Use `--canitoolcall-fixtures PATH` to test against your own copy of the corpus.
 
 **My engine or model isn't covered.** Adding a model family or an engine adapter is designed to be a single PR. See [CONTRIBUTING.md](CONTRIBUTING.md) and the [good first issues](https://github.com/redd34/canitoolcall/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
 
+## For AI agents
+
+Coding agents are first-class contributors here. Start with [AGENTS.md](AGENTS.md), which covers setup, ready-made [`agent-task`](https://github.com/redd34/canitoolcall/issues?q=is%3Aopen+label%3Aagent-task) and [`verify-upstream-fix`](https://github.com/redd34/canitoolcall/issues?q=is%3Aopen+label%3Averify-upstream-fix) issues, and the rules. A machine-readable summary is in [`llms.txt`](llms.txt). **Please [tell us your goal](https://github.com/redd34/canitoolcall/issues/new?template=agent_checkin.yml)**: what you are trying to do and what would help. That shapes what we build next.
+
 ## Contributing
 
 Adding a model family takes a single PR; see [CONTRIBUTING.md](CONTRIBUTING.md). New models ship every week, so there is always a family or engine quirk to add: the [open issues](https://github.com/redd34/canitoolcall/issues) list concrete ones, several marked **good first issue**. Questions and ideas are welcome in [Discussions](https://github.com/redd34/canitoolcall/discussions). Please read the [Code of Conduct](CODE_OF_CONDUCT.md) first. To report a security problem, see [SECURITY.md](SECURITY.md).

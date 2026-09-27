@@ -1,0 +1,22 @@
+# CanIToolCall
+
+> A neutral conformance suite and public matrix for the tool-call and reasoning parsers of inference engines (vLLM, SGLang, llama.cpp, Ollama, HF transformers). It replays recorded model outputs through each engine's own parser code, offline, and checks every way of splitting the stream.
+
+Use it to answer "will this model's tool calls parse correctly on this engine?", to test a live OpenAI-compatible server, or to verify a parser fix.
+
+## Quick use
+- Check a server: `uvx canitoolcall probe --base-url http://localhost:11434/v1 --model qwen3:8b`
+- Matrix (every model family x engine): https://redd34.github.io/canitoolcall/
+- Verify an upstream parser fix PR: `uv run python scripts/verify_upstream_pr.py --engine sglang --pr <N> --family <slug>`
+
+## Docs
+- [README](https://github.com/redd34/canitoolcall/blob/main/README.md): what it checks, results, FAQ
+- [AGENTS.md](https://github.com/redd34/canitoolcall/blob/main/AGENTS.md): guide for AI coding agents, including ready-made tasks and rules
+- [Fixture spec](https://github.com/redd34/canitoolcall/blob/main/spec/README.md): the language-neutral JSONL fixture format
+- [Format notes](https://github.com/redd34/canitoolcall/tree/main/docs/formats): the raw tool-call format of each model family, with sources
+- [Triage](https://github.com/redd34/canitoolcall/blob/main/results/2026-09-25/triage.jsonl): the classified cause of every failing case, with repro commands
+
+## Contribute
+- Tell us your goal: https://github.com/redd34/canitoolcall/issues/new?template=agent_checkin.yml
+- Agent tasks: https://github.com/redd34/canitoolcall/issues?q=is%3Aopen+label%3Aagent-task
+- Package: https://pypi.org/project/canitoolcall/ (Apache-2.0)

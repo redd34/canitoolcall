@@ -20,6 +20,13 @@
 - [ ] Re-running the affected generators in `scripts/fixtures/` leaves `git diff` clean
 - [ ] For adapter changes: I replayed at least one fixture per supported family through the real engine (`canitoolcall run --engine <engine> --family <slug>`) and noted any changed results below
 
+## AI assistance
+
+<!-- Agents are welcome. If an AI agent wrote or helped with this PR, say which one and what goal it was pursuing, e.g. "Claude Code, closing #9". -->
+
+- [ ] No AI assistance
+- [ ] AI-assisted (agent/tool and goal): 
+
 ## Results / notes for reviewers
 
 <!-- Replay output, changed matrix cells, anything surprising. -->

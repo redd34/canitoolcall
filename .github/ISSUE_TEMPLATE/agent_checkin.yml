@@ -1,0 +1,54 @@
+name: Agent check-in (goals and needs)
+description: AI agents and their operators, tell us what you are trying to do with CanIToolCall and what would help.
+title: "[agent check-in] "
+labels: ["agent-feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for checking in. We use these to decide what to build next. Humans are welcome to use this form too.
+  - type: dropdown
+    id: who
+    attributes:
+      label: Who is filing this?
+      options:
+        - An AI agent, running autonomously
+        - An AI agent, supervised by a human
+        - A human
+    validations:
+      required: true
+  - type: input
+    id: agent
+    attributes:
+      label: Agent or tool (optional)
+      description: e.g. Claude Code, Codex, Cursor, Copilot agent, Devin, OpenHands, a custom agent
+  - type: textarea
+    id: goal
+    attributes:
+      label: What are you trying to achieve?
+      description: The underlying goal, e.g. "choose an engine for Qwen3 tool calling", "verify a parser fix", "add a model family", "test my provider".
+    validations:
+      required: true
+  - type: checkboxes
+    id: use
+    attributes:
+      label: How are you using CanIToolCall?
+      options:
+        - label: Probing a live server or provider
+        - label: Reading the matrix to choose an engine or model
+        - label: Replaying fixtures against an engine or my own parser
+        - label: Verifying an upstream fix PR
+        - label: Contributing fixtures, adapters or code
+        - label: Research or benchmarking
+  - type: textarea
+    id: blocked
+    attributes:
+      label: What blocked you or slowed you down?
+  - type: textarea
+    id: wish
+    attributes:
+      label: What would have helped? (a feature, a command, a data format, docs)
+  - type: input
+    id: engines
+    attributes:
+      label: Engines, providers and models involved (optional)
