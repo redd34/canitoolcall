@@ -153,10 +153,32 @@ finding("vllm-qwen3-coder-text-after-call", "vllm", "engine_bug_known_upstream",
 finding("vllm-harmony-header-leaks", "vllm", "engine_bug",
         "gpt-oss: output cut inside a call header leaks the header markup into content; a stray 'commentary to=assistant' header yields a call named 'assistant<|channel|>analysis'.",
         lambda c, fid: fid in {"gpt-oss/harmony-truncated-in-header", "gpt-oss/llamacpp-stray-commentary-header"})
+# ---- vLLM malformed/truncated recovery contracts (issue #10) ----
+finding("vllm-harmony-recovery-newline", "vllm", "untriaged_discrepancy",
+        "gpt-oss: malformed-header recovery differs by an inter-message newline between non-streaming and streaming.",
+        lambda c, fid: fid == "gpt-oss/vllm-malformed-headers",
+        notes="The fixture accepts both recovery outputs; only stream_equals_nonstream fails. Non-streaming joins completed content messages with a newline; all eight tested stream chunkings recover the same messages without it. At ced6857, tests/parser/test_harmony.py L443-457 asserts the non-streaming join, while L552-577 checks individual deltas, including the last one, not the fully reconstructed streaming content. The intended cross-mode contract is therefore unresolved, not asserted by those tests. They include a terminal token removed by this fixture; the earlier pinned replay confirms the same difference without it. No conformance check is waived.")
+finding("vllm-mistral-truncated-empty-call", "vllm", "truncation_policy",
+        "mistral: a truncated call opener leaves an empty streaming call; non-streaming returns no call.",
+        lambda c, fid: fid == "mistral/v13think-stop-at-open-marker",
+        notes="Generation ends immediately after [TOOL_CALLS], with no call name or arguments. Non-streaming preserves the preceding text/reasoning with no call; all eight tested stream chunkings leave one empty-name, empty-argument call as the adapter accumulates parser events. The fixture is tagged truncated: this is a partial-call outcome on cut-off output, not a mis-parse of a complete call. The earlier replay generated no new model output and executed no tools.")
+finding("vllm-harmony-malformed-header-rejection", "vllm", "untriaged_discrepancy",
+        "gpt-oss: every parsing mode rejects the garbled commentary header with the same HarmonyError.",
+        lambda c, fid: fid == "gpt-oss/bug-garbled-channel-commentary-question",
+        notes="Non-streaming and all eight tested stream chunkings raise the same error. The failure is that expected_error permits only no_tool_calls/content_passthrough, not exceptions; it is not a stream/non-stream disagreement. Keep unresolved until maintainers decide the malformed-header recovery contract. Adding exception would change the fixture's contract. No HTTP response or production failure was measured.")
+finding("vllm-deepseek-v3-malformed-call-fragments", "vllm", "untriaged_discrepancy",
+        "deepseek_v3: malformed JSON produces invalid call fragments or no call, depending on the streaming split.",
+        lambda c, fid: fid == "deepseek/vllm-v3-malformed-missing-brace",
+        notes="With the JSON closing brace missing, non-streaming and some stream groupings emit get_weather with invalid arguments; one/special emit no call and other random groupings emit shorter fragments. This is the only within-stream split-dependent case among these nine; non-streaming also violates the fixture's no-call expectation. At ced6857, tests/tool_parsers/test_deepseekv3_tool_parser.py includes this exact input and marks non-streaming test_malformed_input as xfail. That test body in common_tests.py only requires extraction not to raise, rather than a particular recovered parse. Keep the recovery contract unresolved; do not equate it with a complete-output split-loss bug.")
+finding("vllm-malformed-content-recovery-contract", "vllm", "untriaged_discrepancy",
+        "Five malformed/truncated inputs return no calls but recover different text across streaming and non-streaming.",
+        lambda c, fid: fid in {"deepseek/vllm-v3-malformed-missing-call-tokens", "mistral/vllm-v3-malformed-not-json", "qwen3-hermes/bug-sglang-30480-truncated-at-opener", "qwen3-hermes/sglang-malformed-json-in-tags", "qwen3-hermes/truncated-after-open-tag"},
+        notes="Both modes return no calls and no exceptions, so each individual expected_error outcome is permitted. Only stream_equals_nonstream fails: fallback text is kept or dropped differently across modes, while all eight stream chunkings agree within each fixture. Maintainers must decide whether malformed-input text recovery must match across modes; keep all five unresolved, not automatically accepted. At ced6857, tests/parser/mistral/test_tool_calls.py L508-517 asserts the Mistral non-streaming fallback only, not the streaming contract.")
 finding("vllm-stream-nonstream-other", "vllm", "untriaged_discrepancy",
         "Other streaming/non-streaming disagreements on malformed or unusual output (content whitespace, content kept vs dropped).",
         lambda c, fid: True)
 
+# ---- genuine engine bugs: SGLang ----
 finding("sglang-one-delta-args-lost", "sglang", "engine_bug",
         "Streaming loses arguments (''/'{}'), later parallel calls or preceding content only when a delta carries a whole call or several structural tokens (one delta, special-token-boundary deltas); per-token and small random deltas and non-streaming are correct (qwen25, deepseekv3, deepseekv31, glm45/glm47, llama3, mistral).",
         lambda c, fid: nonstream_ok(c) and only_one_special(c) and not marker(fid),
@@ -223,7 +245,7 @@ finding("ollama-gemma4-string-placeholder", "ollama", "engine_bug_known_upstream
         "gemma4: 45 string values followed by a string array drop the call (string-placeholder collision).",
         lambda c, fid: fid == "gemma4/many-strings-then-string-array", upstream="https://github.com/ollama/ollama/issues/18354")
 finding("ollama-qwen3coder-int64-clamp", "ollama", "engine_bug_known_upstream",
-        "qwen3-coder: a number outside int64 (1e20) is silently clamped to 9223372036854775807.",
+        "qwen3-coder: a number outside int64 (1e20) is silently converted with Go's int64(f), whose result for out-of-range floats is implementation-defined: it saturates to 9223372036854775807 on arm64 (macOS snapshot) and wraps to -9223372036854775808 on amd64 (Linux CI nightly 36220399447). Either way the argument is corrupted.",
         lambda c, fid: fid == "qwen3-xml/bug-coder-number-outside-int64", upstream="https://github.com/ollama/ollama/issues/18421")
 finding("ollama-glm47-trailing-whitespace", "ollama", "engine_bug",
         "glm-4.7: leading/trailing whitespace inside <arg_value> (data, per the template) is stripped ('  two  spaces\\n' -> '  two  spaces').",
