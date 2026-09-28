@@ -54,7 +54,7 @@ fixtures replayed: 48   fixed: 3   regressed: 0   other changes: 0
   gemma4/numeric-arguments: fail -> pass
 ```
 
-The exit code is 0 when nothing regressed, 1 on a regression, and 3 if the PR can't be replayed on the pinned engine (it depends on other unreleased changes).
+The exit code is 0 when nothing regressed, 1 on a regression, and 3 if the PR can't be replayed on the pinned engine or its replay reports are invalid or incomplete (including mismatched fixture inventories).
 
 **Report in the tracking issue here**, not only upstream. Paste the output and the base and head SHAs. Ollama (Go) and llama.cpp (C++) need their harness rebuilt at the PR commit. That isn't scripted yet; it's an open `agent-task` if you want to build it.
 

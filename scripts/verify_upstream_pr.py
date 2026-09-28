@@ -18,7 +18,7 @@ Usage (from the repo root, after `bash scripts/engines/<engine>.sh`):
 Needs the GitHub CLI (`gh`), authenticated, to read the PR. Only the PR's
 changed files are swapped in, so a PR that depends on other unreleased
 changes can fail to import. The script reports that as an error rather than
-a result.
+a result. Incomplete or invalid replay reports also return exit code 3.
 """
 
 from __future__ import annotations
@@ -65,14 +65,38 @@ def replay(engine: str, families: list[str], out_dir: Path) -> dict[str, str]:
     cmd += ["--env", "HF_HUB_OFFLINE=1", "--out", str(out_dir)]
     for fam in families:
         cmd += ["--family", fam]
-    # `canitoolcall run` exits 1 when any fixture fails, which is expected here;
-    # only a missing results file means the replay itself broke.
-    proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
-    found = list(out_dir.glob("*.json"))
-    if not found:
-        raise RuntimeError(proc.stderr[-2000:] or proc.stdout[-2000:])
-    result = json.loads(found[0].read_text())
-    return {c["fixture_id"]: c["status"] for c in result["cases"]}
+    # `canitoolcall run` exits 1 when any fixture fails, which is expected here.
+    # Other exits cannot establish a usable replay, even if a report was written.
+    try:
+        proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+    except OSError as e:
+        raise RuntimeError(f"cannot start replay: {e}") from e
+    detail = proc.stderr[-2000:] or proc.stdout[-2000:]
+    if proc.returncode not in (0, 1):
+        raise RuntimeError(f"replay exited with code {proc.returncode}\n{detail}")
+    found = sorted(out_dir.glob("*.json"))
+    if len(found) != 1:
+        raise RuntimeError(f"expected exactly one results JSON file, found {len(found)}\n{detail}")
+    try:
+        result = json.loads(found[0].read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        raise RuntimeError(f"cannot read results JSON {found[0].name}: {e}") from e
+    if not isinstance(result, dict) or not isinstance(result.get("cases"), list) or not result["cases"]:
+        raise RuntimeError("results must contain a nonempty cases list")
+    statuses = {"pass", "soft_pass", "fail", "error", "unsupported"}
+    cases: dict[str, str] = {}
+    for i, case in enumerate(result["cases"]):
+        if not isinstance(case, dict):
+            raise RuntimeError(f"case {i} must be an object")
+        fixture_id, status = case.get("fixture_id"), case.get("status")
+        if not isinstance(fixture_id, str) or not fixture_id.strip():
+            raise RuntimeError(f"case {i} must have a nonempty string fixture_id")
+        if fixture_id in cases:
+            raise RuntimeError(f"duplicate fixture_id: {fixture_id!r}")
+        if not isinstance(status, str) or status not in statuses:
+            raise RuntimeError(f"invalid status for {fixture_id!r}: {status!r}")
+        cases[fixture_id] = status
+    return cases
 
 
 def main() -> int:
@@ -126,8 +150,7 @@ def main() -> int:
             try:
                 results[side] = replay(a.engine, a.family, out)
             except RuntimeError as e:
-                print(f"replay at {side} ({sha[:9]}) failed; the PR may depend on changes", file=sys.stderr)
-                print(f"that are not in the pinned engine.\n{e}", file=sys.stderr)
+                print(f"replay at {side} ({sha[:9]}) failed: {e}", file=sys.stderr)
                 return 3
     finally:
         for f, t in targets.items():
@@ -137,7 +160,14 @@ def main() -> int:
                 t.unlink(missing_ok=True)
 
     b, h = results["base"], results["head"]
-    changed = sorted((k, b[k], h.get(k, "missing")) for k in b if b[k] != h.get(k))
+    if b.keys() != h.keys():
+        print("base and head fixture inventories differ; comparison is incomplete", file=sys.stderr)
+        if missing := sorted(b.keys() - h.keys()):
+            print(f"missing at head: {', '.join(missing)}", file=sys.stderr)
+        if added := sorted(h.keys() - b.keys()):
+            print(f"added at head: {', '.join(added)}", file=sys.stderr)
+        return 3
+    changed = sorted((k, b[k], h[k]) for k in b if b[k] != h[k])
     fixed = [c for c in changed if c[1] in ("fail", "error") and c[2] in ("pass", "soft_pass")]
     regressed = [c for c in changed if c[1] in ("pass", "soft_pass") and c[2] in ("fail", "error")]
     report.update(fixtures=len(b), changed=changed, fixed=len(fixed), regressed=len(regressed))
