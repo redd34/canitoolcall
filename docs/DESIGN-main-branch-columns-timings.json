@@ -1,0 +1,136 @@
+{
+  "kind": "projection of existing GitHub Actions job timestamps, not newly executed benchmarks",
+  "review_date": "2026-09-29",
+  "repository": "redd34/canitoolcall",
+  "run_id": 36552029154,
+  "source_commit": "bdade62a9513ccd8657b5e153a9f7ff2421c832d",
+  "run_event": "schedule",
+  "runs_sampled": 1,
+  "api_source_pages": [
+    "https://api.github.com/repos/redd34/canitoolcall/actions/runs/36552029154/jobs?per_page=2&page=1",
+    "https://api.github.com/repos/redd34/canitoolcall/actions/runs/36552029154/jobs?per_page=2&page=2",
+    "https://api.github.com/repos/redd34/canitoolcall/actions/runs/36552029154/jobs?per_page=2&page=3"
+  ],
+  "jobs": [
+    {
+      "engine": "vllm",
+      "job_id": 109352232919,
+      "source_url": "https://github.com/redd34/canitoolcall/actions/runs/36552029154/job/109352232919",
+      "job_started_at": "2026-09-29T09:53:05Z",
+      "job_completed_at": "2026-09-29T09:55:45Z",
+      "setup_started_at": "2026-09-29T09:53:17Z",
+      "setup_completed_at": "2026-09-29T09:53:42Z",
+      "replay_started_at": "2026-09-29T09:53:43Z",
+      "replay_completed_at": "2026-09-29T09:55:41Z",
+      "job_seconds": 160,
+      "setup_seconds": 25,
+      "replay_seconds": 118
+    },
+    {
+      "engine": "sglang",
+      "job_id": 109352232791,
+      "source_url": "https://github.com/redd34/canitoolcall/actions/runs/36552029154/job/109352232791",
+      "job_started_at": "2026-09-29T09:53:06Z",
+      "job_completed_at": "2026-09-29T09:58:07Z",
+      "setup_started_at": "2026-09-29T09:53:13Z",
+      "setup_completed_at": "2026-09-29T09:53:45Z",
+      "replay_started_at": "2026-09-29T09:53:46Z",
+      "replay_completed_at": "2026-09-29T09:58:03Z",
+      "job_seconds": 301,
+      "setup_seconds": 32,
+      "replay_seconds": 257
+    },
+    {
+      "engine": "llamacpp",
+      "job_id": 109352232768,
+      "source_url": "https://github.com/redd34/canitoolcall/actions/runs/36552029154/job/109352232768",
+      "job_started_at": "2026-09-29T09:53:05Z",
+      "job_completed_at": "2026-09-29T09:55:03Z",
+      "setup_started_at": "2026-09-29T09:53:28Z",
+      "setup_completed_at": "2026-09-29T09:53:52Z",
+      "replay_started_at": "2026-09-29T09:53:54Z",
+      "replay_completed_at": "2026-09-29T09:54:56Z",
+      "job_seconds": 118,
+      "setup_seconds": 24,
+      "replay_seconds": 62
+    },
+    {
+      "engine": "ollama",
+      "job_id": 109352232737,
+      "source_url": "https://github.com/redd34/canitoolcall/actions/runs/36552029154/job/109352232737",
+      "job_started_at": "2026-09-29T09:53:04Z",
+      "job_completed_at": "2026-09-29T09:54:02Z",
+      "setup_started_at": "2026-09-29T09:53:24Z",
+      "setup_completed_at": "2026-09-29T09:53:47Z",
+      "replay_started_at": "2026-09-29T09:53:48Z",
+      "replay_completed_at": "2026-09-29T09:53:57Z",
+      "job_seconds": 58,
+      "setup_seconds": 23,
+      "replay_seconds": 9
+    },
+    {
+      "engine": "transformers",
+      "job_id": 109352232517,
+      "source_url": "https://github.com/redd34/canitoolcall/actions/runs/36552029154/job/109352232517",
+      "job_started_at": "2026-09-29T09:53:05Z",
+      "job_completed_at": "2026-09-29T09:53:46Z",
+      "setup_started_at": "2026-09-29T09:53:19Z",
+      "setup_completed_at": "2026-09-29T09:53:34Z",
+      "replay_started_at": "2026-09-29T09:53:35Z",
+      "replay_completed_at": "2026-09-29T09:53:41Z",
+      "job_seconds": 41,
+      "setup_seconds": 15,
+      "replay_seconds": 6
+    }
+  ],
+  "selected_python_jobs_total_seconds": 461,
+  "selected_python_replays_total_seconds": 375,
+  "caveats": [
+    "Release-pinned setup, not main-branch setup.",
+    "Job interval excludes queue time and is not a billing measurement.",
+    "Cache step success does not prove a cache hit; logs were not inspected.",
+    "One run does not estimate cold-build time, percentiles, or reliability."
+  ],
+  "planning_estimates_runner_minutes": {
+    "metadata_and_publish": [
+      1,
+      2
+    ],
+    "vllm_changed_sha_dependency_cache_warm": [
+      4,
+      8
+    ],
+    "sglang_changed_sha_dependency_cache_warm": [
+      6,
+      12
+    ],
+    "vllm_cold": [
+      8,
+      20
+    ],
+    "sglang_cold": [
+      12,
+      30
+    ],
+    "both_changed_warm_total": [
+      11,
+      22
+    ],
+    "both_cold_total": [
+      21,
+      52
+    ],
+    "unchanged_validated_results_total": [
+      1,
+      2
+    ],
+    "hard_caps": {
+      "vllm": 20,
+      "sglang": 30,
+      "metadata_publish_combined": 5,
+      "total": 55
+    }
+  },
+  "no_new_engine_run": true,
+  "no_schedule_created": true
+}
