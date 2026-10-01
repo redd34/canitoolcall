@@ -6,9 +6,10 @@ engine environment, replays the affected fixture families twice (at the PR's
 base commit and at its head commit), restores the pinned files, and prints
 the per-fixture difference.
 
-Only Python engines are supported so far: vllm, sglang and transformers. For
-Ollama (Go) and llama.cpp (C++), see "Verify an upstream fix PR" in
-AGENTS.md.
+Python engines use changed-file overlays. Ollama (Go) and llama.cpp (C++)
+build complete base/head sources in separate temporary directories. Their
+normal pinned builds are untouched; existing vocab-only GGUFs are reused.
+Compiled builds require bash, git, Go/CMake/C++ as documented in AGENTS.md.
 
 Usage (from the repo root, after `bash scripts/engines/<engine>.sh`):
 
@@ -30,6 +31,8 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+import verify_compiled_pr
 
 ROOT = Path(__file__).resolve().parent.parent
 ENGINES = {
@@ -77,11 +80,16 @@ def replay(engine: str, families: list[str], out_dir: Path) -> dict[str, str]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--engine", required=True, choices=sorted(ENGINES))
+    ap.add_argument("--engine", required=True, choices=sorted(set(ENGINES) | set(verify_compiled_pr.REPOSITORIES)))
     ap.add_argument("--pr", required=True, type=int, help="upstream pull request number")
     ap.add_argument("--family", action="append", default=[], help="fixture family to replay (repeatable; default: all)")
     ap.add_argument("--json", type=Path, help="also write the report as JSON")
+    ap.add_argument("--build-jobs", type=int, default=2, help="parallel compiled build jobs (default: 2)")
     a = ap.parse_args()
+    if a.pr <= 0 or a.build_jobs <= 0:
+        ap.error("--pr and --build-jobs must be positive")
+    if a.engine in verify_compiled_pr.REPOSITORIES:
+        return verify_compiled_pr.verify(ROOT, a.engine, a.pr, a.family, a.json, a.build_jobs)
 
     repo, package, prefix = ENGINES[a.engine]
     pr = gh_json(f"repos/{repo}/pulls/{a.pr}")
