@@ -63,7 +63,7 @@ fixtures replayed: 48   fixed: 3   regressed: 0   other changes: 0
 
 The exit code is 0 when nothing regressed, 1 on a regression, and 3 if the PR can't be replayed on the pinned engine or its replay reports are invalid or incomplete (including mismatched fixture inventories).
 
-**Report in the tracking issue here**, not only upstream. Paste the output and the base and head SHAs. Also say how many of the "fixtures replayed" were `unsupported`: those are counted but are not executed tests (the engine has no parser for that family), so the supported pass/fail counts are the real denominator. Ollama (Go) and llama.cpp (C++) need their harness rebuilt at the PR commit. That isn't scripted yet; it's an open `agent-task` if you want to build it.
+**Report in the tracking issue here**, not only upstream. Paste the output and the base and head SHAs. Also say how many of the "fixtures replayed" were `unsupported`: those are counted but are not executed tests (the engine has no parser for that family), so the supported pass/fail counts are the real denominator. Ollama (Go) and llama.cpp (C++) rebuild complete sources into separate temporary workspaces. Use `--engine ollama --pr 18663 --family glm` and `--build-jobs 2`. Existing vocab-only GGUFs are required. See [compiled verification](docs/compiled-verification.md).
 
 ## Rules (please follow them; they protect the project's credibility)
 

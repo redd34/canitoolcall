@@ -17,12 +17,22 @@
 # C++17 compiler, uv.
 set -euo pipefail
 
+REQUESTED_OLLAMA_REF="${OLLAMA_REF:-}"
 OLLAMA_REF=7af393188defd52d370464de0d2064649cab9b41   # keep in sync with OllamaAdapter.pinned_version
+OLLAMA_REF="${REQUESTED_OLLAMA_REF:-$OLLAMA_REF}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 ENG="$ROOT/.engines/ollama"
 SRC="$ENG/ollama"
 BIN="$ENG/bin"
-JOBS="$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)"
+JOBS="${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)}"
+venv=1
+for arg in "$@"; do
+  case "$arg" in
+    --no-venv) venv=0 ;;
+    *) echo "unknown argument: $arg" >&2; exit 2 ;;
+  esac
+done
+[[ "$OLLAMA_REF" =~ ^[0-9a-f]{40}$ ]] || { echo "OLLAMA_REF must be a full commit SHA" >&2; exit 2; }
 mkdir -p "$ENG" "$BIN"
 
 fetch() {  # $1=repo url  $2=dir  $3=ref (commit or tag)
@@ -64,7 +74,9 @@ cmake --build "$ENG/detok-build" --target ctc-detok -j "$JOBS" >/dev/null
 cp "$ENG/detok-build/ctc-detok" "$BIN/ctc-detok"
 
 echo "== worker venv (.venvs/ollama)"
-uv venv -q --allow-existing -p 3.12 "$ROOT/.venvs/ollama"
+if [[ $venv == 1 ]]; then
+  uv venv -q --allow-existing -p 3.12 "$ROOT/.venvs/ollama"
+fi
 
 echo "== smoke test"
 echo '{"op":"describe","parser":"qwen3-coder"}' | "$BIN/ctcreplay"
