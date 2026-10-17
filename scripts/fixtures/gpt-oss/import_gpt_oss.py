@@ -204,6 +204,7 @@ def build(enc: Any) -> list[dict[str, Any]]:
         ),
         dict(
             name="vllm-sequential-calls",
+            assumes=["stop_token_ignored"],
             src=VLLM,
             line="L723-L745",
             text="<|channel|>analysis<|message|>Thinking<|end|>"
@@ -222,6 +223,7 @@ def build(enc: Any) -> list[dict[str, Any]]:
         ),
         dict(
             name="vllm-call-then-final",
+            assumes=["stop_token_ignored"],
             src=VLLM,
             line="L703-L718",
             text="<|channel|>analysis<|message|>Reasoning about query...<|end|>"
@@ -536,6 +538,8 @@ def main() -> None:
                 notes=" ".join(n for n in notes if n),
             )
         )
+        if "assumes" in c:
+            recs[-1]["assumes"] = c["assumes"]
     write_jsonl(OUT_DIR / "imported.jsonl", recs)
 
 

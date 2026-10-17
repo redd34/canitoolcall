@@ -67,6 +67,13 @@
         "mode": { "enum": ["hf", "mistral"], "default": "hf" }
       }
     },
+    "assumes": {
+      "description": "Preconditions required for a faithful replay; unsupported unless the adapter implements them.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["stop_token_ignored"] }
+    },
+    "finish": { "$ref": "#/$defs/finish" },
     "expected": { "$ref": "#/$defs/expected" },
     "expected_error": { "$ref": "#/$defs/expected_error" },
     "tags": {
@@ -105,6 +112,20 @@
     "notes": { "type": "string" }
   },
   "$defs": {
+    "finish": {
+      "description": "How this generation ended, separately from family.stop_tokens. Explicit stop-without-token semantics are deferred.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "token"],
+      "properties": {
+        "reason": { "enum": ["stop", "length"] },
+        "token": { "type": ["string", "null"] }
+      },
+      "oneOf": [
+        { "properties": { "reason": { "const": "length" }, "token": { "type": "null" } } },
+        { "properties": { "reason": { "const": "stop" }, "token": { "type": "string", "minLength": 1 } } }
+      ]
+    },
     "provenance": {
       "type": "object",
       "additionalProperties": false,

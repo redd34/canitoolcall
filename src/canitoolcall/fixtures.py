@@ -107,6 +107,53 @@ class ExpectedError:
 
 
 @dataclass(frozen=True)
+class Finish:
+    """Recorded generation termination, not the family's possible stop tokens.
+
+    Stop-without-token semantics are deferred; explicit stops name the token.
+    """
+
+    reason: Literal["stop", "length"]
+    token: str | None
+
+    def __post_init__(self) -> None:
+        if self.reason not in ("stop", "length"):
+            raise ValueError("finish.reason must be stop or length")
+        if self.reason == "length":
+            if self.token is not None:
+                raise ValueError("finish length must have token null")
+        elif not isinstance(self.token, str) or not self.token:
+            raise ValueError("finish stop requires a non-empty token")
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> Finish:
+        if not isinstance(value, Mapping) or set(value) != {"reason", "token"}:
+            raise ValueError("finish must contain exactly reason and token")
+        return cls(reason=value["reason"], token=value["token"])
+
+    def to_dict(self) -> dict[str, str | None]:
+        return {"reason": self.reason, "token": self.token}
+
+
+def validate_replay_conditions(
+    assumes: tuple[str, ...] | None, finish: Finish | None, truncated: bool, text: str
+) -> None:
+    """Validate metadata even in stdlib-only workers that bypass JSON Schema."""
+    if assumes is not None:
+        if not isinstance(assumes, tuple) or any(item != "stop_token_ignored" for item in assumes):
+            raise ValueError("assumes permits only stop_token_ignored")
+        if len(set(assumes)) != len(assumes):
+            raise ValueError("assumes entries must be unique")
+    if finish is not None:
+        if not isinstance(finish, Finish):
+            raise ValueError("finish must be a Finish value")
+        if finish.reason == "stop" and truncated:
+            raise ValueError("finish stop contradicts the truncated tag")
+        if finish.token is not None and text.endswith(finish.token):
+            raise ValueError("raw_output must end before finish.token")
+
+
+@dataclass(frozen=True)
 class Fixture:
     """One fixture record. See spec/README.md for field semantics."""
 
@@ -130,6 +177,13 @@ class Fixture:
     line: int | None = field(default=None, compare=False)
     """1-based line number in ``source`` (not part of the record)."""
 
+    assumes: tuple[str, ...] | None = None
+    """Optional replay preconditions. None preserves an absent JSON field."""
+    finish: Finish | None = None
+
+    def __post_init__(self) -> None:
+        validate_replay_conditions(self.assumes, self.finish, "truncated" in self.tags, self.raw_output)
+
     @property
     def reference_model(self) -> str:
         """``models[0]``: the model whose tokenizer/template adapters use."""
@@ -137,12 +191,12 @@ class Fixture:
 
     @property
     def truncated(self) -> bool:
-        """True when generation was cut by ``max_tokens`` (the ``truncated`` tag).
+        """True for explicit length termination, else the legacy ``truncated`` tag.
 
         The model emitted no stop token, so adapters must replay the output
         with ``finish_reason: "length"`` and never append one.
         """
-        return "truncated" in self.tags
+        return self.finish.reason == "length" if self.finish is not None else "truncated" in self.tags
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any], source: Path | None = None, line: int | None = None) -> Fixture:
@@ -151,6 +205,8 @@ class Fixture:
         err = d.get("expected_error")
         tok = d.get("tokenizer")
         ids = d.get("output_token_ids")
+        if "assumes" in d and not isinstance(d["assumes"], list):
+            raise ValueError("assumes must be an array")
         return cls(
             id=d["id"],
             family=d["family"],
@@ -177,6 +233,8 @@ class Fixture:
             notes=d.get("notes"),
             source=source,
             line=line,
+            assumes=tuple(d["assumes"]) if "assumes" in d else None,
+            finish=Finish.from_dict(d["finish"]) if "finish" in d else None,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -199,6 +257,10 @@ class Fixture:
             out["generation_prompt"] = self.generation_prompt
         if self.thinking is not None:
             out["thinking"] = self.thinking
+        if self.assumes is not None:
+            out["assumes"] = list(self.assumes)
+        if self.finish is not None:
+            out["finish"] = self.finish.to_dict()
         if self.expected is not None:
             out["expected"] = {
                 "content": self.expected.content,
@@ -351,7 +413,7 @@ def load_fixtures(
         for n, rec in read_jsonl(f):
             try:
                 fx = Fixture.from_dict(rec, source=f, line=n)
-            except (KeyError, TypeError, AttributeError) as e:
+            except (KeyError, TypeError, AttributeError, ValueError) as e:
                 raise ValueError(
                     f"{f}:{n}: malformed fixture ({type(e).__name__}: {e}); run canitoolcall validate"
                 ) from e
@@ -464,6 +526,11 @@ def validate(paths: Iterable[Path] | None = None) -> list[ValidationIssue]:
             for e in errs:
                 issues.append(ValidationIssue(f, n, f"{e.json_path}: {e.message}"))
             if errs:
+                continue
+            try:
+                Fixture.from_dict(rec)
+            except (TypeError, ValueError) as exc:
+                issues.append(ValidationIssue(f, n, str(exc)))
                 continue
             fid, fam_slug = rec["id"], rec["family"]
             if fid.split("/", 1)[0] != fam_slug:

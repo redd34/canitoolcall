@@ -6,6 +6,9 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- Record optional replay assumptions and generation finish metadata; scope stop-token-ignored fixtures before parsing and keep unsupported out of scoring checks.
+
+
 ### Added
 
 - `AGENTS.md` and `llms.txt` for AI coding agents, an "Agent check-in" issue form for sharing goals and needs, and an AI-assistance field in the PR template.

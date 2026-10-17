@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from canitoolcall.chunking import TokensPerStep
-from canitoolcall.fixtures import Family, Fixture, TokenizerPin
+from canitoolcall.fixtures import Family, Finish, Fixture, TokenizerPin, validate_replay_conditions
 from canitoolcall.results import ParseResult
 
 ToolSpec = Mapping[str, Any]
@@ -136,6 +136,23 @@ class ReplayInput:
     ``tokenizer`` pin. ``None`` when the family is unknown.
     """
 
+    assumes: tuple[str, ...] | None = None
+    finish: Finish | None = None
+
+    def __post_init__(self) -> None:
+        validate_replay_conditions(self.assumes, self.finish, self.truncated, self.text)
+
+    @property
+    def replay_end_tokens(self) -> tuple[str, ...]:
+        """Explicit termination, or unchanged legacy candidates when absent."""
+        if self.finish is not None:
+            return (self.finish.token,) if self.finish.token is not None else ()
+        return () if self.truncated else self.stop_tokens
+
+    @property
+    def finished_by_length(self) -> bool:
+        return self.finish.reason == "length" if self.finish is not None else self.truncated
+
     @classmethod
     def from_fixture(cls, fixture: Fixture, family: Family | None = None) -> ReplayInput:
         ref = family.reference_for(fixture.reference_model) if family else None
@@ -156,6 +173,8 @@ class ReplayInput:
             tokenizer_mode=(fixture.tokenizer.mode if fixture.tokenizer else (ref.tokenizer_mode if ref else "hf")),
             revision=ref.revision if ref else None,
             truncated=fixture.truncated,
+            assumes=fixture.assumes,
+            finish=fixture.finish,
         )
 
 
@@ -217,6 +236,22 @@ class Adapter(abc.ABC):
         Must not import the engine; must be cheap. Unsupported pairs are
         reported as ``unsupported`` in the matrix, never as failures.
         """
+
+    def supports_replay(self, raw: ReplayInput) -> Support:
+        """Narrow family/model support using input conditions, never scored answers.
+
+        Unmarked legacy inputs return the original Support (including its reason).
+        No adapter opts into stop_token_ignored yet. An override must preserve
+        family refusals and explicitly implement any condition it accepts.
+        """
+        supported = self.supports(raw.family, raw.model)
+        if not supported:
+            return supported
+        if raw.assumes:
+            return Support(False, "replay assumption not implemented: " + ", ".join(raw.assumes))
+        if raw.finish is not None:
+            return Support(False, "explicit finish metadata is not implemented by this adapter")
+        return supported
 
     @abc.abstractmethod
     def parser_config(self, raw: ReplayInput) -> dict[str, Any]:

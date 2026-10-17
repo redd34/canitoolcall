@@ -321,6 +321,12 @@ class SglangAdapter(Adapter):
             ids.update(int(i) for i, t in decoder.items() if getattr(t, "special", False))
         return frozenset(ids)
 
+    def supports_replay(self, raw: ReplayInput) -> Support:
+        # _stop_plan handles explicit termination for both parse paths.
+        if raw.finish is not None and not raw.assumes:
+            return self.supports(raw.family, raw.model)
+        return super().supports_replay(raw)
+
     def parser_config(self, raw: ReplayInput) -> dict[str, Any]:
         tools = self._tools.get(raw.fixture_id)
         rp = self._replay(raw, tools, stream=False)
@@ -601,7 +607,7 @@ class SglangAdapter(Adapter):
 
     @staticmethod
     def _stop_plan(ctx: _ModelContext, raw: ReplayInput, units: Sequence[int]) -> _StopPlan:
-        if raw.truncated:
+        if raw.finished_by_length:
             # Cut by max_tokens: the model never emitted a stop token, and the
             # scheduler finishes the request with FINISH_LENGTH.
             return _StopPlan(
@@ -613,6 +619,13 @@ class SglangAdapter(Adapter):
             i = tok.convert_tokens_to_ids(token)
             return int(i) if isinstance(i, int) and i != tok.unk_token_id and i >= 0 else None
 
+        if raw.finish is not None:
+            token = raw.finish.token
+            assert token is not None  # length finishes returned above
+            token_id = tid(token)
+            if token_id is None:
+                raise ValueError("finish.token is not a known token for this tokenizer")
+            return _StopPlan(token, token_id, appended=True, rule="explicit fixture finish.token")
         stops = [s for s in raw.stop_tokens if s]
         for s in stops:
             if raw.text.endswith(s):
