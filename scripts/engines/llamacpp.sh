@@ -23,7 +23,7 @@
 # interpreter with $CANITOOLCALL_LLAMACPP_PYTHON.
 set -euo pipefail
 
-LLAMACPP_REF="a25c9865fe03c954c93fd755b5d79ae86ba99750"  # keep in sync with LlamaCppAdapter.pinned_version
+LLAMACPP_REF="${LLAMACPP_REF:-a25c9865fe03c954c93fd755b5d79ae86ba99750}"  # keep in sync with LlamaCppAdapter.pinned_version
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENGINE="$ROOT/.engines/llamacpp"
@@ -48,6 +48,8 @@ done
 
 command -v git >/dev/null || { echo "git is required" >&2; exit 1; }
 [[ $harness == 0 ]] || command -v cmake >/dev/null || { echo "cmake is required (e.g. brew install cmake)" >&2; exit 1; }
+
+[[ "$LLAMACPP_REF" =~ ^[0-9a-f]{40}$ ]] || { echo "LLAMACPP_REF must be a full commit SHA" >&2; exit 2; }
 
 # 1. Source at the pin (shallow fetch of exactly one commit).
 mkdir -p "$ENGINE"
