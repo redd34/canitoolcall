@@ -13,6 +13,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- 31 derived-cut fixtures (`fixtures/<family>/derived-truncated.jsonl`, all nine families): token prefixes of complete fixtures, cut at structural boundaries and labelled by rule 2 of the recovery contract (issue #36). `scripts/fixtures/derived_truncation.py` regenerates them.
+
 - Compiled upstream-PR verification for Ollama and llama.cpp: isolated full-source builds, configurable build timeouts, allowlisted child environments, revision-checked adapters, owned-process cleanup and complete-file reports. Existing pins and exports are preserved; fixture error outcomes and summary counts follow the Python verifier.
 
 - `AGENTS.md` and `llms.txt` for AI coding agents, an "Agent check-in" issue form for sharing goals and needs, and an AI-assistance field in the PR template.
