@@ -18,6 +18,8 @@ These notes are the reference for writing fixtures. Every rendered example in th
 | [`mistral`](mistral.md) | Mistral, Magistral, Devstral, Ministral | Mistral-Small-4, Mistral-Medium-3.5, Ministral-3, Devstral-2, Magistral-2509, Mistral-Small-3.2 | depends on tokenizer version: `[TOOL_CALLS][{…}]` (v3/v7), `[TOOL_CALLS]NAME[CALL_ID]ID[ARGS]{…}` (v11), `[TOOL_CALLS]NAME[ARGS]{…}` (v13+) |
 | [`gemma4`](gemma4.md) | Gemma 4 (and a note on Gemma 3) | gemma-4-31B-it, 26B-A4B-it, 12B-it, E4B/E2B-it | `<\|tool_call>call:NAME{key:<\|"\|>str<\|"\|>,n:3}<tool_call\|>`: **not JSON** |
 
+Cross-family rules for malformed and truncated output are in [`recovery.md`](recovery.md) (proposed, [#36](https://github.com/redd34/canitoolcall/issues/36)).
+
 ### How currency was checked
 The HF API was queried by author on 2026-09-25, sorted by downloads and by creation date:
 - **Qwen:** Qwen3.8 (2026-08) is current.

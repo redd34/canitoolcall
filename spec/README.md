@@ -127,6 +127,8 @@ Re-encoding text is lossy for some tokenizers (`mistral_common` never maps the t
 
   Returning a tool call for output that was cut off is deliberately **not** an accepted outcome (there is no `partial_call`). The model never finished that call. Its arguments are either invalid JSON, which crashes clients that parse them, or they were silently completed by the parser, and the client would then run a call the model never made. This includes a (partial) call that a streaming parse returned before it raised: the client had already received it. Some OpenAI-compatible servers return such a call together with `finish_reason: "length"`. A client that checks `finish_reason` can cope with that, but because it is unsafe by default, these fixtures judge it `fail`. The matrix shows these results under the `expected_error` check, so they can be told apart from mis-parses of complete output. When two parallel calls are cut in the second one, fixtures expect the first, complete call to be kept.
 
+  How malformed (complete but broken) output must be handled, how streaming and non-streaming results may differ on it, and how raised exceptions count are in the proposed [recovery contract](../docs/formats/recovery.md) ([#36](https://github.com/redd34/canitoolcall/issues/36)).
+
 ## Checks
 
 For each fixture and engine, the runner produces one non-streaming parse and one streaming parse per chunking strategy. Then it applies these checks:
