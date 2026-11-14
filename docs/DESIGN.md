@@ -87,6 +87,24 @@ Each rule was found by the spike **breaking without it**:
 9. **`supports(family, model)` is honest and cheap.** If the engine has no parser for a model version (for example, SGLang 0.5.20 has none for DeepSeek-V4.1), return `Support(False, reason)`. The runner reports `unsupported`.
 10. **Offline by default.** Tokenizers and templates are fetched once into the HF cache at pinned revisions (config and tokenizer files only, never weights). Tests set `HF_HUB_OFFLINE=1` when the cache is warm. Full runs should pass `--env HF_HUB_OFFLINE=1` too: some tokenizer paths (vLLM's Mistral mode) list repo files over the network even at a pinned revision, and bulk runs then hit Hub rate limits.
 
+### Per-replay conditions (issue #9)
+
+The additive nonabstract `supports_replay(raw: ReplayInput) -> Support` refines
+applicability without changing the existing two-argument family/model hook.
+The worker preserves a family refusal, then checks per-replay support before
+requesting units, parsing, or parser configuration. Applicability never consumes
+expected answers and never becomes a scored check. See the normative
+[replay conditions](../spec/README.md#replay-conditions-and-generation-termination)
+for optional `assumes` / `finish` fields, their validation and serialization.
+
+In rule 5 above, `stop_tokens` is the family's **candidate** list. Explicit
+`finish` identifies the actual terminal token independently; explicit `length`
+forbids appending any stop. Without metadata, existing engine-specific defaults
+stay unchanged. SGLang and llama.cpp currently implement explicit finish;
+other adapters decline it instead of silently guessing. No adapter currently
+opts into `stop_token_ignored`. Historical matrix archives are not regenerated
+or reclassified by this change.
+
 ### Checks and normalization
 
 The semantics are in spec/README.md ("Checks" and "Normalization policy soft-v1"). A case's status is the worst over its checks: `fail` > `error` > `soft_pass` > `pass`. `unsupported` is used when the adapter declines. Whitespace-only differences in content/reasoning, and leading or trailing newlines, are `soft_pass`, never `pass`, and the matrix shows them separately. The spike saw these in several engines (glm45 leading `\n`, Qwen3 hermes `"\n\n"` content, Gemma 4 trailing `\n`).

@@ -471,11 +471,16 @@ class LlamaCppAdapter(Adapter):
             "chat_template_kwargs": self._kwargs(raw),
             "ids": list(units if units is not None else self.units(raw)),
             # A truncated generation ended at max_tokens, with no stop token.
-            "end_tokens": [] if raw.truncated else list(raw.stop_tokens),
+            "end_tokens": list(raw.replay_end_tokens),
             "nonstream": nonstream,
             "streams": [dict(s) if isinstance(s, Mapping) else list(s) for s in streams],
         }
-        return self._h().request(req)
+        response = self._h().request(req)
+        if raw.finish is not None and response.get("ok") and "engine_error" not in response:
+            config = response.get("config", {})
+            if "end_token" not in config or config["end_token"] != raw.finish.token:
+                raise ValueError("harness did not replay the explicit finish.token")
+        return response
 
     @staticmethod
     def _kwargs(raw: ReplayInput) -> dict[str, Any]:
@@ -520,6 +525,12 @@ class LlamaCppAdapter(Adapter):
                 "nonstream": self._nonstream_result(reply).to_dict(),
             }
         return out
+
+    def supports_replay(self, raw: ReplayInput) -> Support:
+        # _request sends the exact terminal token (or none for a length finish).
+        if raw.finish is not None and not raw.assumes:
+            return self.supports(raw.family, raw.model)
+        return super().supports_replay(raw)
 
     def parser_config(self, raw: ReplayInput) -> dict[str, Any]:
         vocab = self._vocab(raw)

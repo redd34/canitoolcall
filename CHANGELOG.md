@@ -6,6 +6,9 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- Record optional replay assumptions and generation finish metadata; scope stop-token-ignored fixtures before parsing and keep unsupported out of scoring checks.
+
+
 ### Added
 
 - Compiled upstream-PR verification for Ollama and llama.cpp: isolated full-source builds, configurable build timeouts, allowlisted child environments, revision-checked adapters, owned-process cleanup and complete-file reports. Existing pins and exports are preserved; fixture error outcomes and summary counts follow the Python verifier.

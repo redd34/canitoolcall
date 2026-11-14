@@ -44,6 +44,8 @@ The family slug is the directory name, the `family` field, and the prefix of eve
 | `tokenizer` | with ids | `{repo, revision, mode: hf\|mistral}`. `repo`@`revision` must be `models[0]` at its pinned revision in `family.json`, or that reference model's declared `mirror` (for gated repos). Revisions are full 40-hex commit shas, never branch names: adapters load tokenizers from this pin, and only a short reviewed allowlist of pins may run repository code (`trust_remote_code`) |
 | `generation_prompt` | optional | the text `add_generation_prompt` appends, when it matters (e.g. it pre-fills `<think>\n`) |
 | `thinking` | optional | whether thinking was enabled in the request; `null` means the template default |
+| `assumes` | optional | unique replay requirements; currently only `stop_token_ignored` |
+| `finish` | optional | `{reason: stop\|length, token: string\|null}`; actual termination, not candidate stops |
 | `notes` | optional | free text |
 
 ### Provenance is mandatory. Never invent formats.
@@ -66,6 +68,46 @@ The family slug is the directory name, the `family` field, and the prefix of eve
 When the two differ, prefer `engine_test` or `recorded` sources, and say so in `notes`.
 
 **Derived fixtures are tagged.** A fixture whose `raw_output` is not quoted verbatim from its `source_url` (for example a `bug_report` fixture built by applying the reported malformation to a template render, or a token-prefix truncation of a `spec_example`) carries `x-derived` or `x-derived-truncation`, and its `notes` say how it was made.
+
+### Replay conditions and generation termination
+
+`assumes` is input applicability, not an expected parse. `stop_token_ignored`
+marks output that only reaches a parser when normal stop-token handling is
+bypassed, such as the two imported gpt-oss sequences continuing after `<|call|>`.
+No current adapter implements that requirement: these two cases are reported
+as `unsupported` with a reason and no checks, not as parser failures or passes.
+Unknown assumption names and contradictory metadata are validation errors.
+
+An optional `finish` records **the actual ending**:
+
+- `{"reason": "length", "token": null}` means the output was cut; append no stop.
+- `{"reason": "stop", "token": "<literal token>"}` identifies the actual token,
+  which can be a non-first entry of the reference model's `stop_tokens`.
+- A length finish with a token, a stop finish with the legacy `truncated` tag,
+  or an output already ending in its declared terminal token is invalid.
+- Stop-without-token semantics remain deferred. Do not invent a token or turn
+  an unknown ending into a length finish.
+
+When `finish` is absent, **all legacy adapter behavior is retained**, including
+existing family-specific stop selection and the `truncated` tag. No corpus-wide
+migration is required. Absent fields stay absent through serialization; an
+explicit empty `assumes` list stays present. `ReplayInput.stop_tokens` remains
+the full set of candidate stops, separate from `ReplayInput.finish`.
+
+The nonabstract `Adapter.supports_replay(raw)` sees only replay input, never
+`expected` or `expected_error`. Its default preserves the original family/model
+`Support` and reason for unmarked legacy inputs, and declines unimplemented
+conditions. An override may narrow that support, never widen it; the worker
+retains the family refusal guard and checks applicability before `units`, either
+parse path, or `parser_config`. Putting `unsupported` in a scored `CheckResult`
+is an error, not a way to manufacture a passing case.
+
+SGLang and llama.cpp consume explicit finish metadata in their existing shared
+stop-plan/request paths. The other adapters conservatively decline explicit
+finishes until their serving-path handling is implemented and tested. No
+adapter opts into `stop_token_ignored`. Parser configuration retains the explicit
+`replay_conditions` plus any engine-specific stop observation. Legacy parser
+configuration is unchanged when both optional fields are absent.
 
 ### Token ids come first
 

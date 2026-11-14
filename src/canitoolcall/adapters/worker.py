@@ -78,6 +78,9 @@ def replay(
     """
     raw = ReplayInput.from_fixture(fixture, family)
     sup = adapter.supports(raw.family, raw.model)
+    if sup:
+        # An override can narrow support, but cannot widen an existing refusal.
+        sup = adapter.supports_replay(raw)
     if not sup:
         return {"ok": True, "fixture_id": fixture.id, "supported": False, "reason": sup.reason}
     tools = list(fixture.tools)
@@ -107,12 +110,21 @@ def replay(
     nonstream = adapter.parse(raw, tools).to_dict()
     # parser_config comes last: some engines (llama.cpp) only know their full
     # parser configuration after a parse with this fixture's tools.
+    config = adapter.parser_config(raw)
+    if raw.finish is not None or raw.assumes is not None:
+        config = dict(config)
+        conditions: dict[str, Any] = {}
+        if raw.finish is not None:
+            conditions["finish"] = raw.finish.to_dict()
+        if raw.assumes is not None:
+            conditions["assumes"] = list(raw.assumes)
+        config["replay_conditions"] = conditions
     return {
         "ok": True,
         "fixture_id": fixture.id,
         "supported": True,
         "reason": None,
-        "parser_config": adapter.parser_config(raw),
+        "parser_config": config,
         "nonstream": nonstream,
         "streams": streams,
         "skipped": skipped,

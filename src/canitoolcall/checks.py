@@ -251,6 +251,8 @@ def is_synthetic(strategy: str, synthetic: Collection[str] = ()) -> bool:
 
 def case_status(rows: Sequence[CheckResult], synthetic: Collection[str] = ()) -> Status:
     """Worst status over the rows of realistic strategies (see :func:`is_synthetic`)."""
+    if any(r.status is Status.UNSUPPORTED for r in rows):
+        raise ValueError("unsupported belongs to adapter applicability, not a scored CheckResult")
     return worst_status(r.status for r in rows if not is_synthetic(r.strategy, synthetic))
 
 
