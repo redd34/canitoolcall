@@ -17,17 +17,24 @@ The cut sits right after a named piece of text (an open marker, a function name,
 key/value separator, a value before its inner close, ...), and the script refuses a
 cut that does not fall on a token boundary.
 
-The expectation follows rule 2 of the recovery contract
-(https://github.com/redd34/canitoolcall/issues/36): the unfinished call must never be
-returned, and returning the text, dropping it or raising are all accepted. A call that
-is complete before the cut is kept, as in the ``*-truncated-second-parallel-call``
-fixtures. Whether text completed before the cut must be kept is left open: cuts with
-no complete call use ``expected_error`` with all three outcomes accepted, and cuts that
-keep a call are only taken from sources with no text around the calls.
+The expectation follows section 2 of the recovery contract (``docs/formats/recovery.md``,
+issue #36): the unfinished call must never be returned, and returning the text, dropping
+it or raising are all accepted. A call that is complete before the cut is kept, as in the
+``*-truncated-second-parallel-call`` fixtures. Whether text completed before the cut must
+be kept is left open: cuts with no complete call use ``expected_error`` with all three
+outcomes accepted, and cuts that keep a call are only taken from sources with no text
+around the calls. A call whose arguments are all closed but whose close marker is cut off
+is still unfinished, and its ``reason`` names the missing marker.
 
 Every record keeps its source's provenance (``source_url``, ``revision``, ``license``,
-``attribution``), names this script as ``generator``, is tagged ``truncated`` and
-``x-derived-truncation``, and says in ``notes`` which fixture it was cut from and where.
+``attribution``, ``template_sha256``) and says in ``notes`` which fixture it was cut from
+and where. ``generator`` names this script, except for ``template_render`` sources: they
+keep the generator that renders the source, and ``notes`` name this script instead.
+
+Tags: every record is tagged ``truncated`` and ``x-derived-truncation``. A source tag is
+carried when the cut still contains what it describes (see ``TAG_RULES``). Tags about
+argument values are tested on the arguments that are complete in the cut: every argument
+of a kept call, and the leading ``closed_args`` arguments of the cut call.
 
 Only tokenizer files are downloaded, each at the fixture's pinned revision. Kimi's
 tokenizer is tiktoken-based and only loads through repository code, so this script
@@ -44,7 +51,7 @@ import base64
 import json
 import re
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
@@ -57,18 +64,106 @@ from _shared.core import REPO_ROOT, validate_records, write_jsonl  # noqa: E402
 
 GENERATOR = "scripts/fixtures/derived_truncation.py"
 OUT_NAME = "derived-truncated.jsonl"
-RULE = "https://github.com/redd34/canitoolcall/issues/36"
+RULE = "docs/formats/recovery.md"
 ACCEPT_ALL = ["no_tool_calls", "content_passthrough", "exception"]
 
-# Source tags that still describe a prefix of the output. Format sub-variant tags carry over
-# so that the matrix and triage group a derived cut with its source.
-CARRIED_CORE_TAGS = ("text-before-call", "reasoning", "reasoning-prefilled")
+# Format sub-variant tags always carry over, so that the matrix and triage group a derived cut
+# with its source.
 SUBFORMAT_TAG = re.compile(
     r"^x-(deepseek-v\d+|kimi-k\d|glm\d+|llama-(json|pythonic)|recipient-in-(role|channel)|v3-json-array|v11-args"
     r"|v13-compact|no-newlines|whitespace-variant-\d+|think-[a-z-]+|constrain-[a-z-]+)$"
 )
 
 Decoder = Callable[[Sequence[int]], str]
+
+
+@dataclass(frozen=True)
+class InCut:
+    """What a cut still contains, for deciding which source tags it carries."""
+
+    raw: str
+    keep: int
+    content: str | None
+    """The source's expected content and reasoning, which a cut keeps only if they are in ``raw``."""
+    reasoning: str | None
+    nodes: tuple[Any, ...]
+    """Every key and value, nested ones included, of the arguments complete in the cut."""
+
+
+def _nodes(value: Any) -> Iterator[Any]:
+    yield value
+    if isinstance(value, dict):
+        for key, item in value.items():
+            yield key
+            yield from _nodes(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _nodes(item)
+
+
+def _any_str(c: InCut, test: Callable[[str], bool]) -> bool:
+    return any(isinstance(n, str) and test(n) for n in c.nodes)
+
+
+def _reasoning_kept(c: InCut) -> bool:
+    return c.reasoning is not None and c.reasoning in c.raw
+
+
+# Source tag -> (is it still in the cut?, why it is dropped otherwise). A source tag with neither a
+# rule here nor a SUBFORMAT_TAG match stops the script, so that every dropped tag is a decision.
+TAG_RULES: dict[str, tuple[Callable[[InCut], bool], str]] = {
+    # Call counts describe the calls a parser returns, so they need a kept call. The corpus's other
+    # truncated fixtures with no complete call carry no call-count tag either.
+    "single-call": (lambda c: c.keep > 0, "the only call is unfinished, so the cut has no complete call"),
+    "parallel-calls": (lambda c: c.keep > 0, "the cut ends inside the first call, so it has no complete call"),
+    "text-before-call": (
+        lambda c: c.content is not None and c.content.strip() in c.raw,
+        "the text before the call is not in the cut",
+    ),
+    "reasoning": (_reasoning_kept, "the reasoning is not in the cut"),
+    "reasoning-prefilled": (_reasoning_kept, "the reasoning is not in the cut"),
+    # Argument values: only the arguments complete in the cut count.
+    "numeric-arguments": (
+        lambda c: any(isinstance(n, int | float) and not isinstance(n, bool) for n in c.nodes),
+        "no argument value complete in the cut is a number",
+    ),
+    "unicode": (
+        lambda c: _any_str(c, lambda s: not s.isascii()),
+        "no argument complete in the cut has a non-ASCII character",
+    ),
+    "nested-json": (
+        lambda c: any(isinstance(n, dict | list) for n in c.nodes),
+        "no object or array argument is complete in the cut",
+    ),
+    "string-escapes": (
+        lambda c: _any_str(c, lambda s: any(ch in s for ch in '"\\') or any(ord(ch) < 32 for ch in s)),
+        "no string argument that needs a JSON escape is complete in the cut",
+    ),
+    "x-multiline-string": (lambda c: _any_str(c, lambda s: "\n" in s), "no multi-line string is complete in the cut"),
+    "x-significant-whitespace": (
+        lambda c: _any_str(c, lambda s: s != s.strip()),
+        "no value with leading or trailing whitespace is complete in the cut",
+    ),
+    "x-pythonic-nested-list": (
+        lambda c: any(isinstance(n, list) for n in c.nodes),
+        "no list argument is complete in the cut",
+    ),
+    "x-schema-coercion": (
+        lambda c: any(not isinstance(n, str) for n in c.nodes),
+        "every value complete in the cut is a string, so none is coerced by the schema",
+    ),
+    "x-code-in-arguments": (
+        lambda c: _any_str(c, lambda s: any(ch in s for ch in "(){};")),
+        "no code argument is complete in the cut",
+    ),
+    # Format details of the call text itself.
+    "x-parameters-key": (lambda c: '"parameters"' in c.raw, 'the cut ends before the "parameters" key'),
+    "x-id-encodes-name": (
+        lambda c: re.search(r"functions\.[\w.-]+:\d+<\|tool_call_argument_begin\|>", c.raw) is not None,
+        "the cut ends before the call id functions.<name>:<idx> is complete",
+    ),
+    "x-typed-args": (lambda c: re.search(r' type="\w+"', c.raw) is not None, "the cut has no typed argument header"),
+}
 
 
 @dataclass(frozen=True)
@@ -85,6 +180,9 @@ class Cut:
     """Where the cut sits, completing "Output cut by max_tokens ..."."""
     keep: int = 0
     """Number of calls complete before the cut, which a correct parser keeps."""
+    closed_args: int = 0
+    """Number of leading arguments of the cut call whose value is closed before the cut. A JSON
+    number with no delimiter after it is not closed: the next tokens could extend it."""
 
 
 CUTS: tuple[Cut, ...] = (
@@ -102,6 +200,7 @@ CUTS: tuple[Cut, ...] = (
         '"unit": "celsius"}}',
         1,
         "just before the outer close </tool_call>, with the call JSON itself complete",
+        closed_args=2,
     ),
     Cut(
         "qwen3-hermes/sglang-text-before-call-with-space",
@@ -133,6 +232,7 @@ CUTS: tuple[Cut, ...] = (
         "</function>\n",
         1,
         "just before the outer close </tool_call>, with </function> already emitted, after reasoning",
+        closed_args=1,
     ),
     Cut(
         "qwen3-xml/llamacpp-q35-reasoning-content-call",
@@ -162,6 +262,7 @@ CUTS: tuple[Cut, ...] = (
         '"limit": 10',
         1,
         "after the last argument value, before the two closing braces (one token, so no cut fits between them)",
+        closed_args=1,
     ),
     Cut(
         "llama/l4-vllm-pythonic-more-types",
@@ -176,6 +277,7 @@ CUTS: tuple[Cut, ...] = (
         "age=9,",
         1,
         "inside the arguments, at a key/value boundary (after a complete keyword argument)",
+        closed_args=2,
     ),
     # ---- kimi: K2 section tokens, K3 XTML
     Cut(
@@ -184,6 +286,7 @@ CUTS: tuple[Cut, ...] = (
         '"name": "test",\n',
         1,
         "inside the argument JSON, at a key/value boundary (after a complete pair), after text",
+        closed_args=1,
     ),
     Cut(
         "kimi/k2i-single-call",
@@ -230,6 +333,7 @@ CUTS: tuple[Cut, ...] = (
         "<arg_value>3.14",
         1,
         "inside an argument value, just before its inner close </arg_value>",
+        closed_args=2,
     ),
     # ---- deepseek: V3 fenced JSON, V4.1 DSML
     Cut(
@@ -246,6 +350,7 @@ CUTS: tuple[Cut, ...] = (
         "```",
         2,
         "after the closing code fence, just before <｜tool▁call▁end｜>",
+        closed_args=2,
     ),
     Cut(
         "deepseek/vllm-v3-single-call",
@@ -261,6 +366,7 @@ CUTS: tuple[Cut, ...] = (
         "</｜DSML｜ parameter>\n",
         1,
         "inside the first invoke, between its two parameters, after text",
+        closed_args=1,
     ),
     # ---- gemma4: <|tool_call>call:name{k:v}<tool_call|>
     Cut(
@@ -277,6 +383,7 @@ CUTS: tuple[Cut, ...] = (
         'celsius<|"|>}',
         1,
         "just before the outer close <tool_call|>, with the argument object closed",
+        closed_args=2,
     ),
     Cut(
         "gemma4/vllm-text-before-call",
@@ -307,6 +414,7 @@ CUTS: tuple[Cut, ...] = (
         '{"a": 3.5,',
         1,
         "inside the arguments, at a key/value boundary (after a complete pair)",
+        closed_args=1,
     ),
     # ---- gpt-oss: Harmony
     Cut(
@@ -322,6 +430,7 @@ CUTS: tuple[Cut, ...] = (
         '"newString": "if (part < 4) {",',
         1,
         "inside the argument JSON, at a key/value boundary (after a complete pair), after reasoning",
+        closed_args=2,
     ),
 )
 
@@ -413,32 +522,77 @@ def token_prefix(src: dict[str, Any], cut: Cut) -> list[int]:
     raise AssertionError(f"{src['id']}: no token boundary right after {cut.after!r} (occurrence {cut.occurrence})")
 
 
-def carried_tags(src: dict[str, Any], keep: int) -> list[str]:
-    tags = ["truncated", "x-derived-truncation"]
-    if keep and "parallel-calls" in src["tags"]:
-        tags.append("parallel-calls")
-    tags += [t for t in src["tags"] if t in CARRIED_CORE_TAGS]
-    tags += [t for t in src["tags"] if SUBFORMAT_TAG.match(t)]
-    return tags
+@cache
+def family_markers(family: str) -> frozenset[str]:
+    path = REPO_ROOT / "fixtures" / family / "family.json"
+    return frozenset(json.loads(path.read_text(encoding="utf-8"))["markers"])
+
+
+def in_cut(src: dict[str, Any], cut: Cut, raw: str) -> InCut:
+    """The kept calls' arguments and the cut call's closed leading arguments, with the text kept."""
+    calls = src["expected"]["tool_calls"]
+    done = [dict(c["arguments"]) for c in calls[: cut.keep]]
+    if cut.closed_args:
+        items = list(calls[cut.keep]["arguments"].items())[: cut.closed_args]
+        if len(items) < cut.closed_args or any(key not in raw for key, _ in items):
+            raise AssertionError(f"{src['id']}: the cut does not hold {cut.closed_args} arguments of call {cut.keep}")
+        done.append(dict(items))
+    nodes = tuple(n for args in done for key, value in args.items() for n in (key, *_nodes(value)))
+    exp = src["expected"]
+    return InCut(raw, cut.keep, exp["content"], exp["reasoning_content"], nodes)
+
+
+def tag_decisions(src: dict[str, Any], c: InCut) -> list[tuple[str, str | None]]:
+    """Each source tag, with ``None`` when the cut carries it or else the reason it is dropped."""
+    out: list[tuple[str, str | None]] = []
+    for tag in src["tags"]:
+        if SUBFORMAT_TAG.match(tag):
+            out.append((tag, None))
+        elif tag in TAG_RULES:
+            present, reason = TAG_RULES[tag]
+            out.append((tag, None if present(c) else reason))
+        else:
+            raise AssertionError(f"{src['id']}: source tag {tag!r} has no TAG_RULES entry")
+    return out
+
+
+def missing_close(src: dict[str, Any], cut: Cut, k: int, decode: Decoder) -> str | None:
+    """The close marker cut off a call whose arguments are all closed, if the cut is there."""
+    calls = src["expected"]["tool_calls"]
+    if cut.keep >= len(calls) or not cut.closed_args or cut.closed_args < len(calls[cut.keep]["arguments"]):
+        return None
+    marker = decode(src["output_token_ids"][k : k + 1])
+    if marker not in family_markers(src["family"]):
+        raise AssertionError(f"{src['id']}: the token after a complete payload is {marker!r}, not a family marker")
+    return marker
 
 
 def derive(src: dict[str, Any], cut: Cut) -> dict[str, Any]:
     ids = token_prefix(src, cut)
     pin = src["tokenizer"]
-    raw = decoder(pin["repo"], pin["revision"], pin["mode"])(ids)
+    decode = decoder(pin["repo"], pin["revision"], pin["mode"])
+    raw = decode(ids)
     exp = src["expected"]
     name = src["id"].split("/", 1)[1]
+    provenance = dict(src["provenance"])
     notes = (
         f"Derived, not quoted: the first {len(ids)} of {len(src['output_token_ids'])} output tokens of {src['id']} "
-        f"({src['provenance']['kind']}), cut {cut.where}. Expectation by rule 2 of the recovery contract ({RULE}): "
+        f"({provenance['kind']}), cut {cut.where}. Expectation by section 2 of the recovery contract ({RULE}): "
         "the unfinished call must not be returned."
     )
+    if provenance["kind"] == "template_render":
+        notes += (
+            f" The source is a history render of the official chat template, made by {provenance['generator']}; "
+            f"{GENERATOR} cut it."
+        )
+    else:
+        provenance["generator"] = GENERATOR
     rec: dict[str, Any] = {
         "id": f"{src['family']}/{name}-cut-{cut.slug}",
         "family": src["family"],
         "models": src["models"],
         "spec_version": src["spec_version"],
-        "provenance": {**src["provenance"], "generator": GENERATOR},
+        "provenance": provenance,
         "tools": src["tools"],
         "raw_output": raw,
         "output_token_ids": ids,
@@ -455,13 +609,15 @@ def derive(src: dict[str, Any], cut: Cut) -> dict[str, Any]:
         rec["expected"] = {"content": None, "reasoning_content": None, "tool_calls": exp["tool_calls"][: cut.keep]}
         notes += f" The first {cut.keep} call(s) are complete before the cut, so a correct parser keeps them."
     else:
-        rec["expected_error"] = {
-            "reason": f"Output cut by max_tokens {cut.where}: no complete call exists.",
-            "accept": ACCEPT_ALL,
-        }
+        marker = missing_close(src, cut, len(ids), decode)
+        why = "no complete call exists"
+        if marker:
+            why = f"the call's close marker {marker} is missing, so the call is unfinished"
+        rec["expected_error"] = {"reason": f"Output cut by max_tokens {cut.where}: {why}.", "accept": ACCEPT_ALL}
         if exp["content"] is not None or exp["reasoning_content"] is not None:
             notes += " Whether the text completed before the cut must be kept is not decided, so all outcomes pass."
-    rec["tags"] = carried_tags(src, cut.keep)
+    carried = [tag for tag, dropped in tag_decisions(src, in_cut(src, cut, raw)) if dropped is None]
+    rec["tags"] = ["truncated", "x-derived-truncation", *carried]
     rec["notes"] = notes
     return rec
 
