@@ -1,8 +1,8 @@
 # Malformed and truncated output: the recovery contract
 
-**Status: proposed** in [#36](https://github.com/redd34/canitoolcall/issues/36). Nothing on this page changes a check yet. The
-code changes it implies are listed under [Follow-up work](#follow-up-work) and land in separate PRs once the rule is
-agreed.
+**Status: proposed** in [#36](https://github.com/redd34/canitoolcall/issues/36). Section 3 is implemented in
+`canitoolcall.checks.compare_modes`. The rest of the code changes the rule implies are listed under
+[Follow-up work](#follow-up-work).
 
 The [spec](../../spec/README.md#expected-results) says what well-formed output must parse to. This page says what a
 parser must do when the model's output is **malformed** (a marker is missing, extra or garbled, but generation ended
@@ -93,7 +93,7 @@ failures. So does `mistral/v13think-stop-at-open-marker` on vLLM, where every st
   rejects it, or one raises and another does not, the result is `fail`.
 - For `expected` fixtures, nothing changes. Every mode must equal `expected`, so the modes equal each other.
 - For `expected_error` fixtures, **each mode is judged on its own by `expected_error`**. When the modes return the same
-  calls (none) and the same exception type but **different recovered text**, `stream_equals_nonstream` and
+  tool calls (normally none) and the same exception type but **different recovered text**, `stream_equals_nonstream` and
   `split_invariance` give `soft_pass` instead of `fail`.
 
 **Why.** Text recovered from malformed output has no reference value: the fixture lists acceptable outcomes, not a
@@ -155,9 +155,9 @@ The rule changes how two checks compare modes (section 3), not what any fixture 
 
 ## Follow-up work
 
-1. **Checks (one PR):** in `check_stream_equals_nonstream` and `check_split_invariance`, give `soft_pass` for
+1. **Checks (done: `compare_modes`):** in `check_stream_equals_nonstream` and `check_split_invariance`, give `soft_pass` for
    `expected_error` fixtures when the calls and exception type are equal and only `content` or `reasoning_content`
-   differ. Document it under "Normalization policy" in `spec/README.md`, and add a regression test for each direction:
+   differ. Document it under "Normalization policy" in `spec/README.md`, with a regression test for each direction:
    text difference → `soft_pass`, call or raise difference → `fail`.
 2. **Triage (after the next run):** regenerate `triage.jsonl`. Retire `vllm-malformed-content-recovery-contract` and
    `vllm-harmony-recovery-newline`, and file `vllm-harmony-malformed-header-rejection` and

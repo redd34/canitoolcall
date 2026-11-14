@@ -18,6 +18,11 @@ Comparison policy (spec/README.md, "Normalization policy soft-v1"):
   content/reasoning; whitespace-only -> ``None``.
 * strict-equal -> PASS; soft-only-equal -> SOFT_PASS; otherwise FAIL.
 
+Cross-mode checks (``stream_equals_nonstream``, ``split_invariance``) use
+:func:`compare_modes`: for ``expected_error`` fixtures, two parses with the same
+tool calls and exception type that differ only in recovered text are SOFT_PASS
+(recovery contract, docs/formats/recovery.md section 3).
+
 Arguments that are not valid JSON (including ``""`` for a no-argument call,
 ``NaN``/``Infinity``, objects with a duplicate key, and a non-string
 ``arguments_raw``) never equal a valid parse. Two parses that raised compare
@@ -199,6 +204,42 @@ def compare(a: ParseResult, b: ParseResult) -> Status:
     return Status.FAIL
 
 
+RECOVERED_TEXT_ONLY = "recovered text only"
+"""Detail prefix for a cross-mode difference that :func:`compare_modes` softens."""
+
+
+def _calls_and_exception(result: ParseResult) -> tuple[Any, Any]:
+    c = canonical(result, soft=False)
+    return c["tool_calls"], c["exception"]
+
+
+def compare_modes(fixture: Fixture, a: ParseResult, b: ParseResult) -> Status:
+    """:func:`compare` for two parses of the same output in different modes.
+
+    For an ``expected_error`` fixture there is no reference text, so when the
+    tool calls and the exception type are equal and only ``content`` or
+    ``reasoning_content`` differ, the result is SOFT_PASS instead of FAIL. A
+    differing call or raise stays FAIL. ``expected`` fixtures are unchanged.
+    """
+    status = compare(a, b)
+    if (
+        status is Status.FAIL
+        and fixture.expected_error is not None
+        and _calls_and_exception(a) == _calls_and_exception(b)
+    ):
+        return Status.SOFT_PASS
+    return status
+
+
+def _mode_detail(fixture: Fixture, a: ParseResult, b: ParseResult, status: Status, *, want_label: str) -> str | None:
+    if status is Status.PASS:
+        return None
+    detail = describe_difference(a, b, want_label=want_label)
+    if status is Status.SOFT_PASS and compare(a, b) is Status.FAIL:
+        return f"{RECOVERED_TEXT_ONLY}: {detail}"
+    return detail
+
+
 def _short(value: Any) -> str:
     text = repr(value)
     return text if len(text) <= _DETAIL_MAX else text[: _DETAIL_MAX - 3] + "..."
@@ -368,11 +409,11 @@ def check_expected_error(fixture: Fixture, family: Family | None, obs: Observati
 
 
 def check_stream_equals_nonstream(fixture: Fixture, family: Family | None, obs: Observation) -> list[CheckResult]:
-    """``stream_equals_nonstream``: one row per strategy, via :func:`compare`."""
+    """``stream_equals_nonstream``: one row per strategy, via :func:`compare_modes`."""
     rows: list[CheckResult] = []
     for label, got in obs.streams.items():
-        status = compare(obs.nonstream, got)
-        detail = None if status is Status.PASS else describe_difference(obs.nonstream, got, want_label="nonstream")
+        status = compare_modes(fixture, obs.nonstream, got)
+        detail = _mode_detail(fixture, obs.nonstream, got, status, want_label="nonstream")
         rows.append(_row("stream_equals_nonstream", label, status, detail))
     return rows
 
@@ -395,10 +436,10 @@ def check_split_invariance(fixture: Fixture, family: Family | None, obs: Observa
     for label, got in streams.items():
         if label == ref_id:
             continue
-        st = compare(ref, got)
+        st = compare_modes(fixture, ref, got)
         statuses.append(st)
         if st is not Status.PASS:
-            diffs.append(f"{label} ({st.value}): {describe_difference(ref, got, want_label=ref_id)}")
+            diffs.append(f"{label} ({st.value}): {_mode_detail(fixture, ref, got, st, want_label=ref_id)}")
     status = worst_status(statuses)
     detail = None if not diffs else f"vs {ref_id}: " + " | ".join(diffs)
     return [_row("split_invariance", ALL_STREAMS, status, detail)]

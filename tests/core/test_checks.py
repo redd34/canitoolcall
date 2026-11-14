@@ -15,6 +15,7 @@ from core_corpus import sample_family, sample_record, single_call_record, trunca
 from canitoolcall.checks import (
     ALL_CHECKS,
     NONSTREAM,
+    RECOVERED_TEXT_ONLY,
     canonical,
     canonical_arguments,
     case_status,
@@ -27,6 +28,7 @@ from canitoolcall.checks import (
     check_split_invariance,
     check_stream_equals_nonstream,
     compare,
+    compare_modes,
     decode_arguments,
     describe_difference,
     expected_as_result,
@@ -324,6 +326,88 @@ def test_split_invariance_ignores_synthetic_streams(fx: Fixture, good: ParseResu
     # ...but the synthetic stream is still compared with the non-streaming parse.
     rows = check_stream_equals_nonstream(fx, None, obs(good, char_0=broken))
     assert by_strategy(rows) == {"char:0": Status.FAIL}
+
+
+# Recovery contract section 3 (docs/formats/recovery.md): for expected_error fixtures, modes are compared on
+# tool calls and exception type; a recovered-text-only difference is soft_pass, anything else stays fail.
+
+
+def test_cross_mode_recovered_text_only_is_soft_pass(trunc: Fixture) -> None:
+    kept = ParseResult(content=trunc.raw_output)
+    dropped = ParseResult(content="I will check.")
+    rows = check_stream_equals_nonstream(trunc, None, obs(kept, one=dropped, token=kept))
+    assert by_strategy(rows) == {"one": Status.SOFT_PASS, "token": Status.PASS}
+    soft = next(r for r in rows if r.strategy == "one")
+    assert soft.detail is not None and soft.detail.startswith(f"{RECOVERED_TEXT_ONLY}: content")
+
+    (row,) = check_split_invariance(trunc, None, obs(kept, one=kept, token=dropped))
+    assert row.status is Status.SOFT_PASS
+    assert row.detail is not None and f"token (soft_pass): {RECOVERED_TEXT_ONLY}: " in row.detail
+
+    reasoned = ParseResult(reasoning_content="thinking", content=None)
+    assert by_strategy(check_stream_equals_nonstream(trunc, None, obs(ParseResult(), one=reasoned))) == {
+        "one": Status.SOFT_PASS
+    }
+    assert compare_modes(trunc, kept, dropped) is Status.SOFT_PASS
+    assert compare_modes(trunc, kept, kept) is Status.PASS
+
+
+def test_cross_mode_call_or_raise_difference_still_fails(trunc: Fixture, good: ParseResult) -> None:
+    none = ParseResult(content=trunc.raw_output)
+    raised = ParseResult(exception="ValueError: unterminated")
+    other_raise = ParseResult(exception="KeyError: 'name'")
+    rows = check_stream_equals_nonstream(trunc, None, obs(none, one=good, token=raised))
+    assert by_strategy(rows) == {"one": Status.FAIL, "token": Status.FAIL}
+    assert all(RECOVERED_TEXT_ONLY not in (r.detail or "") for r in rows)
+    (row,) = check_split_invariance(trunc, None, obs(none, one=raised, token=other_raise))
+    assert row.status is Status.FAIL
+    # Same exception type with different messages is already equal.
+    assert compare_modes(trunc, raised, ParseResult(exception="ValueError: other")) is Status.PASS
+
+
+def test_cross_mode_compares_calls_exactly(trunc: Fixture, good: ParseResult) -> None:
+    other_args = with_call(good, 0, arguments_raw='{"city": "Bern", "unit": "c"}')
+    reordered = replace(good, tool_calls=tuple(reversed(good.tool_calls)))
+    fewer = replace(good, tool_calls=good.tool_calls[:1])
+    for variant in (other_args, reordered, fewer, replace(other_args, content="other text")):
+        assert compare_modes(trunc, good, variant) is Status.FAIL
+    # Identical calls, different text: softened like the no-call case (expected_error fails the calls anyway).
+    assert compare_modes(trunc, good, replace(good, content="other text")) is Status.SOFT_PASS
+
+
+def test_cross_mode_raise_vs_no_raise_fails_both_directions(trunc: Fixture) -> None:
+    quiet = ParseResult(content="I will check.")
+    raised = ParseResult(content="I will check.", exception="ValueError: unterminated")
+    assert compare_modes(trunc, quiet, raised) is Status.FAIL
+    assert compare_modes(trunc, raised, quiet) is Status.FAIL
+
+
+def test_cross_mode_split_invariance_mixed_and_reasoning(trunc: Fixture, good: ParseResult) -> None:
+    kept = ParseResult(content=trunc.raw_output)
+    (row,) = check_split_invariance(trunc, None, obs(kept, one=kept, token=ParseResult(), rand_1_8=good))
+    assert row.status is Status.FAIL
+    assert row.detail is not None and "token (soft_pass)" in row.detail and "rand:1:8 (fail)" in row.detail
+    (row,) = check_split_invariance(trunc, None, obs(kept, one=kept, token=ParseResult(reasoning_content="r")))
+    assert row.status is Status.SOFT_PASS
+    # A synthetic stream is still compared with nonstream, under the same rule.
+    rows = check_stream_equals_nonstream(trunc, None, obs(kept, char_0=ParseResult()))
+    assert by_strategy(rows) == {"char:0": Status.SOFT_PASS}
+
+
+def test_cross_mode_expected_fixture_text_difference_still_fails(fx: Fixture, good: ParseResult) -> None:
+    other_text = replace(good, content="something else")
+    assert by_strategy(check_stream_equals_nonstream(fx, None, obs(good, one=other_text))) == {"one": Status.FAIL}
+    (row,) = check_split_invariance(fx, None, obs(good, one=good, token=other_text))
+    assert row.status is Status.FAIL
+    assert compare_modes(fx, good, other_text) is Status.FAIL
+
+
+def test_cross_mode_soft_pass_sets_case_status(trunc: Fixture) -> None:
+    kept = ParseResult(content=trunc.raw_output)
+    dropped = ParseResult()
+    rows = run_checks(trunc, None, obs(kept, one=kept, token=dropped, rand_1_8=kept))
+    assert case_status(rows) is Status.SOFT_PASS
+    assert {r.check for r in rows if r.status is Status.SOFT_PASS} == {"stream_equals_nonstream", "split_invariance"}
 
 
 # --------------------------------------------------------------------------- leakage

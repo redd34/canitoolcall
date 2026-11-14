@@ -6,6 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- `stream_equals_nonstream` and `split_invariance` give `soft_pass`, not `fail`, when two parses of an `expected_error` fixture differ only in recovered text (same tool calls and exception type), per the recovery contract (#36). Calls or raises that differ between modes still fail.
 - Proposed recovery contract for malformed and truncated output (`docs/formats/recovery.md`, issue #36): recover complete calls, never return unfinished ones, compare modes on calls and exceptions for `expected_error` fixtures, count parser exceptions as outcomes. Documentation only; no check or fixture changes.
 - Record optional replay assumptions and generation finish metadata; scope stop-token-ignored fixtures before parsing and keep unsupported out of scoring checks.
 

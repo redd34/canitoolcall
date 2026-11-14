@@ -13,7 +13,7 @@
 {% macro legend() -%}
 <ul class="legend" aria-label="Status legend">
   <li>{{ badge("pass") }} strict match on every realistic strategy</li>
-  <li>{{ badge("soft_pass") }} only whitespace differs (normalization <code>soft-v1</code>)</li>
+  <li>{{ badge("soft_pass") }} only whitespace differs (normalization <code>soft-v1</code>), or streaming and non-streaming recover different text from malformed output</li>
   <li>{{ badge("fail") }} a check failed</li>
   <li>{{ badge("error") }} the harness failed, not the engine's parser</li>
   <li>{{ badge("unsupported") }} the engine has no parser for this family or model</li>
