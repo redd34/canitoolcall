@@ -195,7 +195,7 @@ flowchart LR
 | `arguments_schema` | the arguments validate against the tool's JSON Schema, and the name is one of the offered tools |
 | `parallel_order` | parallel calls come back complete and in order |
 
-A case gets the worst status over its checks: `fail` > `error` > `soft pass` > `pass`. Differences only in whitespace, such as a leading `\n` in the reasoning, count as `soft pass`, and the matrix shows them separately. `unsupported` means the engine version has no parser for that model, and CanIToolCall never guesses in its place. The exact rules are in [`spec/README.md`](spec/README.md).
+A case gets the worst status over its checks: `fail` > `error` > `soft pass` > `pass`. Differences only in whitespace, such as a leading `\n` in the reasoning, count as `soft pass`, and the matrix shows them separately. So does malformed or truncated output for which streaming and non-streaming return the same calls but recover different text ([recovery contract](docs/formats/recovery.md)). `unsupported` means the engine version has no parser for that model, and CanIToolCall never guesses in its place. The exact rules are in [`spec/README.md`](spec/README.md).
 
 ### Families and engines
 
@@ -264,7 +264,7 @@ Use `--canitoolcall-fixtures PATH` to test against your own copy of the corpus.
 
 **Why do engines have different fixture counts?** An engine version may simply have no parser for a model family's format. Those cases are reported as `unsupported`, and CanIToolCall never guesses in the engine's place.
 
-**What is a soft pass?** A result that differs from the expected one only in whitespace, such as a leading newline in the reasoning. The matrix shows soft passes separately from passes.
+**What is a soft pass?** A result that differs from the expected one only in whitespace, such as a leading newline in the reasoning. It is also given when, for malformed or truncated output, streaming and non-streaming return the same calls but recover different text. The matrix shows soft passes separately from passes.
 
 **My engine or model isn't covered.** Adding a model family or an engine adapter is designed to be a single PR. See [CONTRIBUTING.md](CONTRIBUTING.md) and the [good first issues](https://github.com/redd34/canitoolcall/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
 

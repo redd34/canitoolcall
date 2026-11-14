@@ -4,7 +4,8 @@
 <h1>Tool-call parser conformance matrix</h1>
 <p class="lede">Each cell shows how one inference engine's own tool-call and reasoning parsers handle one model
 family's recorded outputs, parsed once without streaming and once per token-chunking strategy. Pass rates are
-strict; whitespace-only differences are counted separately as soft passes.
+strict; whitespace-only differences, and malformed output whose recovered text differs between streaming and
+non-streaming, are counted separately as soft passes.
 {% if latest %}Latest run: <time datetime="{{ latest }}">{{ latest|date }}</time>.{% endif %}</p>
 
 {% if not matrix.runs %}

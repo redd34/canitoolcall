@@ -137,8 +137,8 @@ For each fixture and engine, the runner produces one non-streaming parse and one
 |---|---|
 | `expected_match` | the result equals `expected` (per strategy, including `nonstream`) |
 | `expected_error` | the outcome is in `expected_error.accept` |
-| `stream_equals_nonstream` | every streaming result equals the non-streaming result |
-| `split_invariance` | all streaming results are equal to one another |
+| `stream_equals_nonstream` | every streaming result equals the non-streaming result (for `expected_error` fixtures, a recovered-text-only difference is `soft_pass`) |
+| `split_invariance` | all streaming results are equal to one another (with the same `expected_error` exception as the row above) |
 | `no_leakage` | no family marker appears in content, reasoning or argument strings unless `expected` contains it verbatim |
 | `arguments_json` | every `arguments_raw` parses as a JSON object |
 | `arguments_schema` | every call's arguments validate against the tool's `parameters` schema, and the name is one of the offered tools |
@@ -151,6 +151,7 @@ Check details (policy of `canitoolcall.checks`):
 - **Rows.** Each check emits one row per parse it applies to (`nonstream` or a strategy id). `split_invariance` emits a single row with strategy `*`, comparing every realistic stream with the `one` stream. `arguments_json` and `arguments_schema` emit rows only for parses that returned tool calls. `parallel_order` applies only when `expected` has two or more calls.
 - **Arguments** are compared as parsed JSON: key order and whitespace don't matter, and value types do (`3` ≠ `"3"`, `true` ≠ `1`). `1` and `1.0` are the same JSON number. Text that is not strict JSON never equals a valid parse. That includes `""` for a no-argument call, a double-encoded string, `NaN`/`Infinity`, an object with a duplicate key (clients may keep either value), and a missing (`null`) `arguments_raw`.
 - **Exceptions.** Two parses that raised are equal when the exception *type* matches; messages may differ.
+- **Cross-mode comparison of `expected_error` fixtures.** Text recovered from malformed or truncated output has no reference value. So when `stream_equals_nonstream` or `split_invariance` compares two parses of an `expected_error` fixture that return the same tool calls and the same exception type, and differ only in `content` or `reasoning_content`, the row is `soft_pass` with a detail starting `recovered text only`. A differing call or a differing raise is still `fail`, and `expected` fixtures are unaffected. See the [recovery contract](../docs/formats/recovery.md), section 3.
 - **`expected_error`.** A result is `content_passthrough` when its content equals `raw_output`. Equality after stripping surrounding whitespace also counts, but that alone gives `soft_pass`.
 - **`no_leakage`** also scans tool names and JSON object keys. For `expected_error` fixtures, markers in `content` are allowed, since passing the raw text through is a graceful outcome.
 - **`arguments_schema`.** A call whose arguments equal the expected arguments passes even if they violate the schema: the model emitted them, and the engine returned them faithfully. An invalid tool schema is a fixture problem and gives `error`.
@@ -179,7 +180,7 @@ Engines disagree on whitespace in ways users rarely notice. Results distinguish:
 - **strict** equality: `""` becomes `null`; everything else is compared exactly (arguments as parsed JSON).
 - **soft** equality (`soft-v1`): `content` and `reasoning_content` are stripped of leading and trailing whitespace, and a whitespace-only string becomes `null`.
 
-Strict equality gives `pass`. Soft-only equality gives `soft_pass`, which the matrix shows separately. Everything else is `fail`.
+Strict equality gives `pass`. Soft-only equality gives `soft_pass`, which the matrix shows separately. Everything else is `fail`, except a recovered-text-only difference between modes on an `expected_error` fixture, which is also `soft_pass` (see "Cross-mode comparison" under Checks).
 
 ## Versioning
 
