@@ -10,8 +10,7 @@ All notable changes to this project are documented here. The format follows
 
 - `canitoolcall lookup NAME [--engine E] [--matrix PATH_OR_URL] [--json]` answers "does family or model X parse on engine Y?" from a `matrix.json` (stdlib HTTP, with a timeout and a 20 MB cap; unknown names, unreachable sources, unsupported schema versions and malformed files exit 2). Everything read from the file is validated (status values, page paths that stay under the site) and control characters are escaped before printing. The exit code is 0 even when the status is `fail`; scripts should use `--json`. The default source (the published matrix) works once the site is rebuilt by a release containing this change: the live file predates `schema_version` and is rejected with an explanation until then; use `--matrix` with a newer file meanwhile.
 - `matrix.json` now has a versioned schema (`spec/matrix.schema.json`, also published at its `$id` by the site build, `schema_version` "1.0", rules in `spec/README.md`) and an optional `family_info` map of family names and model repos. Existing fields are unchanged.
-
-- `canitoolcall matrix` now also writes shields.io endpoint badges (`badges/<engine>/<family>.json` per cell and `badges/<engine>.json` per engine, newest version of each engine, derived from the same data as `matrix.json`), and cell pages show the Markdown snippets in a "Badges" section.
+- `canitoolcall matrix` now also writes shields.io endpoint badges (`badges/<engine>/<family>.json` per cell and `badges/<engine>.json` per engine, newest version of each engine, derived from the same data as `matrix.json`; messages read like `fail · 23/54 strict pass`, stale badge files are cleared on each build, layout documented in `spec/README.md`), and cell pages show the Markdown snippets in a "Badges" section.
 
 ## [0.2.0] - 2026-11-15
 

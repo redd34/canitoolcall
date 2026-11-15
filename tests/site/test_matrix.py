@@ -675,6 +675,7 @@ def test_render_site_publishes_matrix_schema(tmp_path: Path, sample_fixtures_dir
     published = json.loads((out / "spec" / "matrix.schema.json").read_text(encoding="utf-8"))
     assert published["$id"] == "https://redd34.github.io/canitoolcall/spec/matrix.schema.json"
 
+
 # --------------------------------------------------------------------------- badges
 
 
@@ -692,7 +693,7 @@ def test_badges_written_for_newest_versions(tmp_path: Path) -> None:
     assert _read_json(out / "badges" / "vllm" / "qwen3-hermes.json") == {
         "schemaVersion": 1,
         "label": "qwen3-hermes on vllm",
-        "message": "fail 33%",
+        "message": "fail · 1/3 strict pass",
         "color": "red",
     }
     matrix = _read_json(out / "matrix.json")
@@ -714,6 +715,13 @@ def test_badges_written_for_newest_versions(tmp_path: Path) -> None:
     }
     sg = _read_json(out / "badges" / "sglang.json")
     assert (sg["message"], sg["color"]) == ("0/1 families pass", "orange")  # an error cell
+    assert _read_json(out / "badges" / "sglang" / "qwen3-hermes.json")["message"] == "error · 1/2 strict pass"
+
+    # Stale badge files from an earlier build are removed.
+    stale = out / "badges" / "gone.json"
+    stale.write_text("{}", encoding="utf-8")
+    render_site(results, out, fixtures_dir=tmp_path / "none")
+    assert not stale.exists()
 
     # Only the newest version of each engine gets badges, and cell pages show them only there.
     assert sorted(p.name for p in (out / "badges").glob("*.json")) == ["sglang.json", "vllm.json"]
@@ -735,9 +743,12 @@ def test_badge_messages_and_colors() -> None:
         return Cell("fam", "eng", "1", counts, status, "2026-01-01T00:00:00Z")
 
     ok = cell_badge(mk(Status.PASS, 87, 100))
-    assert (ok["message"], ok["color"]) == ("pass 87%", "brightgreen")
-    assert cell_badge(mk(Status.FAIL, 54, 100))["message"] == "fail 54%"
-    assert cell_badge(mk(Status.FAIL, 999, 1000))["message"] == "fail >99%"
+    assert (ok["message"], ok["color"]) == ("pass · 87/100 strict pass", "brightgreen")
+    assert cell_badge(mk(Status.FAIL, 23, 54))["message"] == "fail · 23/54 strict pass"
+    soft = cell_badge(mk(Status.SOFT_PASS, 0, 3))
+    assert (soft["message"], soft["color"]) == ("soft pass · 0/3 strict pass", "yellowgreen")
+    err = cell_badge(mk(Status.ERROR, 1, 4))
+    assert (err["message"], err["color"]) == ("error · 1/4 strict pass", "orange")
     none = Cell("fam", "eng", "1", {s.value: 0 for s in Status}, Status.UNSUPPORTED, "")
     assert cell_badge(none)["message"] == "unsupported"
     assert engine_badge("eng", [none])["message"] == "unsupported"

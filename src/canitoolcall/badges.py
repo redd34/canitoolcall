@@ -11,6 +11,7 @@ https://shields.io/badges/endpoint-badge (``schemaVersion`` 1, ``label``,
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
@@ -37,11 +38,6 @@ def _word(status: Status) -> str:
     return status.value.replace("_", " ")
 
 
-def _pct(rate: float) -> str:
-    pct = rate * 100
-    return ">99%" if 99.5 <= pct < 100 else f"{pct:.0f}%"  # never round a failure up to 100 %
-
-
 def _safe(part: str) -> str:
     from canitoolcall.matrix import _safe as safe
 
@@ -57,9 +53,14 @@ def cell_badge_path(engine: str, family: str) -> str:
 
 
 def cell_badge(cell: Cell) -> dict[str, Any]:
-    """Endpoint JSON for one cell: ``pass 87%``, ``fail 54%`` or ``unsupported``."""
-    rate = cell.pass_rate
-    message = _word(cell.status) if rate is None else f"{_word(cell.status)} {_pct(rate)}"
+    """Endpoint JSON for one cell: ``fail · 23/54 strict pass`` or ``unsupported``.
+
+    The headline status is the worst over supported cases; the count is strict passes
+    over supported cases, so it cannot be misread as a failure rate.
+    """
+    message = _word(cell.status)
+    if cell.supported:
+        message += f" · {cell.counts[Status.PASS.value]}/{cell.supported} strict pass"
     return {
         "schemaVersion": 1,
         "label": f"{cell.family} on {cell.engine}",
@@ -100,6 +101,8 @@ def badge_files(matrix: Matrix) -> dict[str, dict[str, Any]]:
 
 
 def write_badges(matrix: Matrix, out_dir: Path) -> None:
+    """Write the badge files, first removing ``<out_dir>/badges`` so stale files do not linger."""
+    shutil.rmtree(out_dir / "badges", ignore_errors=True)
     for rel, data in badge_files(matrix).items():
         target = out_dir / rel
         target.parent.mkdir(parents=True, exist_ok=True)

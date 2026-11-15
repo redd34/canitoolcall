@@ -206,3 +206,19 @@ Strict equality gives `pass`. Soft-only equality gives `soft_pass`, which the ma
 | `cells` | one per family and engine: `status` (worst over supported cases), `counts` per status, `pass_rate` (strict pass over supported cases, `null` if none), `stress_failures`, per-check `checks`, `run_at`, `page` (site-relative cell page) |
 
 Versioning rule: adding optional fields is a minor bump; removing or renaming a field, or changing its meaning, is a major bump. Readers must ignore unknown fields and must reject an unknown major version.
+
+## `badges/`
+
+`canitoolcall matrix` also writes [shields.io endpoint](https://shields.io/badges/endpoint-badge) JSON next to the site. This layout is a stable public contract (READMEs embed these URLs); changing it needs a changelog entry. The directory is rebuilt on every build, so files for removed engines or families disappear.
+
+| Path | Content |
+|---|---|
+| `badges/<engine>/<family>.json` | one cell of the engine's newest version |
+| `badges/<engine>.json` | summary of the engine's supported families |
+
+Every file has exactly the fields `schemaVersion` (`1`), `label`, `message` and `color`.
+
+- Cell: `label` is `<family> on <engine>`; `message` is `<status> · <P>/<N> strict pass` (P strict passes over N supported cases; `<status>` is `pass`, `soft pass`, `fail` or `error`, the worst over supported cases), or just `unsupported` when N is 0.
+- Engine: `label` is the engine name; `message` is `<P>/<N> families pass` over supported families, or `unsupported`.
+- `color` follows the status (the worst one for an engine): `pass` brightgreen, `soft pass` yellowgreen, `fail` red, `error` orange, `unsupported` lightgrey.
+- Only the newest version of each engine has badges; the URL does not contain the version.
