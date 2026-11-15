@@ -2,9 +2,9 @@
 
 **Models (MiniMaxAI):**
 - MiniMax-M2 (2025-10)
-- MiniMax-M2.1 (2025-12)
+- MiniMax-M2.1 (2025-12), the reference model for the fixtures (modified MIT)
 - MiniMax-M2.5 (2026-02)
-- MiniMax-M2.7 (2026-04), the current M2.x release and the reference model for the fixtures
+- MiniMax-M2.7 (2026-04), the current M2.x release (non-commercial license, so it is covered by the render check but is not the reference)
 
 MiniMax-M3 and M3.1-Flash use a different tool-call format (`]<]minimax[>[<tool_call>`, see [README.md](README.md)) and have their own engine parsers (`minimax_m3`). They are **not** part of this family and are a follow-up.
 
@@ -23,7 +23,7 @@ All tool calls of one assistant turn sit inside **one** `<minimax:tool_call>` se
 
 The function name and the parameter names are **XML attributes in double quotes**. Values follow the template rule `v | tojson(ensure_ascii=False) if v is not string else v`: strings are raw and unescaped, and everything else is JSON. A parser must therefore use the tool schema to tell the string `"3"` from the number `3`. Values have no wrapping newlines, so whitespace inside `<parameter>` is data.
 
-Rendered from MiniMax-M2.7 (rev `0a65367`) for a turn with reasoning and two parallel calls, followed by two tool results (the system prompt and tool list that precede it are omitted):
+Rendered from MiniMax-M2.1 (rev `917dbb7`) for a turn with reasoning and two parallel calls, followed by two tool results (the system prompt and tool list that precede it are omitted):
 
 ```
 ]~b]ai
@@ -90,14 +90,14 @@ All four templates share the same assistant-turn rendering. They differ only in 
 
 | Model | URL |
 |---|---|
-| MiniMax-M2.7 (reference) | https://huggingface.co/MiniMaxAI/MiniMax-M2.7/blob/0a6536713b0b03f3be97494e5cf8d22f668a3164/chat_template.jinja |
+| MiniMax-M2.7 | https://huggingface.co/MiniMaxAI/MiniMax-M2.7/blob/0a6536713b0b03f3be97494e5cf8d22f668a3164/chat_template.jinja |
 | MiniMax-M2.5 | https://huggingface.co/MiniMaxAI/MiniMax-M2.5/blob/2515a3ea0afec1dd22d0c7794b3a91557804d195/chat_template.jinja |
-| MiniMax-M2.1 | https://huggingface.co/MiniMaxAI/MiniMax-M2.1/blob/917dbb7d0761e24d8623c0a5d97624550181c8e6/chat_template.jinja |
+| MiniMax-M2.1 (reference) | https://huggingface.co/MiniMaxAI/MiniMax-M2.1/blob/917dbb7d0761e24d8623c0a5d97624550181c8e6/chat_template.jinja |
 | MiniMax-M2 | https://huggingface.co/MiniMaxAI/MiniMax-M2/blob/04312f0cfbdeefb912575595b7c045512a29293c/chat_template.jinja |
 
-Model-card documents describing the same format (M2.7 rev `0a65367`): `docs/tool_calling_guide.md`, `docs/vllm_deploy_guide.md`, `docs/sglang_deploy_guide.md` and `docs/transformers_deploy_guide.md` in https://huggingface.co/MiniMaxAI/MiniMax-M2.7/tree/0a6536713b0b03f3be97494e5cf8d22f668a3164.
+Model-card documents describing the same format (M2.7 rev `0a65367`, read for the format description only; the fixtures are not rendered from it): `docs/tool_calling_guide.md`, `docs/vllm_deploy_guide.md`, `docs/sglang_deploy_guide.md` and `docs/transformers_deploy_guide.md` in https://huggingface.co/MiniMaxAI/MiniMax-M2.7/tree/0a6536713b0b03f3be97494e5cf8d22f668a3164.
 
-**Licenses.** M2, M2.1 and M2.5 declare `license: other` (modified MIT or the MiniMax model license). M2.7 ships a non-commercial license (`LICENSES/minimax-m2.7.txt`). The fixtures contain only format syntax and text written for this repository, but their provenance records the reference model's license (`LicenseRef-minimax-m2.7`).
+**Licenses.** The reference model, MiniMax-M2.1, declares `license: other`, `license_name: modified-mit` in its model card, with `license_link` pointing at `https://github.com/MiniMax-AI/MiniMax-M2.1/blob/main/LICENSE`. The Hugging Face repository ships no LICENSE file, so the license text was not read for this repository and is not copied into `LICENSES/`; the fixtures' provenance records it as `LicenseRef-minimax-m2.1-modified-mit` (the license as declared). The fixtures contain only format syntax and text written for this repository. M2.7 ships a non-commercial license, which is why it is not the reference; its template and tokenizer are only compared against, and nothing from them is copied.
 
 ## Engine parser mapping
 
@@ -129,8 +129,8 @@ No fixture for #57826 is included: the issue was not read for this family, and a
 
 | File | Source | `models` |
 |---|---|---|
-| `render.jsonl` (18) | MiniMax-M2.7 `chat_template.jinja` @ `0a65367` | M2.7, M2.5, M2.1, M2 (renders checked identical, tokens and text) |
-| `truncated.jsonl` (5) | token prefixes of `minimax/single-call`: inside a value, between parameters, before `</invoke>`, before `</minimax:tool_call>`, and inside the reasoning | M2.7 |
+| `render.jsonl` (18) | MiniMax-M2.1 `chat_template.jinja` @ `917dbb7` | M2.1, M2.7, M2.5, M2 (renders checked identical, tokens and text) |
+| `truncated.jsonl` (5) | token prefixes of `minimax/single-call`: at the start of a value (right after the opening `<parameter name="unit">` tag), between parameters, before `</invoke>`, before `</minimax:tool_call>`, and inside the reasoning | M2.1 |
 
 Notes:
 - **Expected content and reasoning** are the message as authored. The template separators (`</think>\n\n`, and the `\n` before `<minimax:tool_call>`) are format glue, not content. Engines that keep them get `soft_pass`.

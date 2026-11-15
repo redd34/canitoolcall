@@ -20,8 +20,8 @@
   ],
   "reference_models": [
     {
-      "repo": "MiniMaxAI/MiniMax-M2.7",
-      "revision": "0a6536713b0b03f3be97494e5cf8d22f668a3164",
+      "repo": "MiniMaxAI/MiniMax-M2.1",
+      "revision": "917dbb7d0761e24d8623c0a5d97624550181c8e6",
       "variant": "m2-xml",
       "default_generation_prompt": "]~b]ai\n<think>\n",
       "stop_tokens": [

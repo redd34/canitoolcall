@@ -13,10 +13,10 @@
 
 Provenance of every fixture written here is ``template_render``: an assistant
 message rendered through the OFFICIAL chat template of the reference model
-(``chat_template.jinja`` at a pinned revision, MiniMax-M2.7) with
+(``chat_template.jinja`` at a pinned revision, MiniMax-M2.1) with
 ``apply_chat_template(tokenize=True)``; see ``_shared.core.render``. Truncated
 fixtures are a token prefix of such a render, which is what ``max_tokens``
-produces. The M2, M2.1 and M2.5 repositories are listed in ``models`` only when
+produces. The M2, M2.5 and M2.7 repositories are listed in ``models`` only when
 their own template and tokenizer render every fixture byte-identically.
 
 Every M2.x template opens ``<think>\\n`` in the generation prompt, so the raw
@@ -68,11 +68,11 @@ GENERATOR = f"scripts/fixtures/{SLUG}/build.py"
 
 # --------------------------------------------------------------------------- models
 
-REFERENCE = ("MiniMaxAI/MiniMax-M2.7", "0a6536713b0b03f3be97494e5cf8d22f668a3164")
-LICENSE = "LicenseRef-minimax-m2.7"
+REFERENCE = ("MiniMaxAI/MiniMax-M2.1", "917dbb7d0761e24d8623c0a5d97624550181c8e6")
+LICENSE = "LicenseRef-minimax-m2.1-modified-mit"
 SIBLINGS = (
+    ("MiniMaxAI/MiniMax-M2.7", "0a6536713b0b03f3be97494e5cf8d22f668a3164"),
     ("MiniMaxAI/MiniMax-M2.5", "2515a3ea0afec1dd22d0c7794b3a91557804d195"),
-    ("MiniMaxAI/MiniMax-M2.1", "917dbb7d0761e24d8623c0a5d97624550181c8e6"),
     ("MiniMaxAI/MiniMax-M2", "04312f0cfbdeefb912575595b7c045512a29293c"),
 )
 """(repo, revision) whose rendered output is checked to be identical, then listed in ``models``."""
@@ -485,12 +485,15 @@ def build_truncated(tok: Any, renders: dict[str, Rendered], sha: str) -> list[di
     r = renders[single.name]
     raw, ids = cut_before(r, tok, "celsius")
     rec(
-        "truncated-inside-param-value",
+        "truncated-at-param-value-start",
         single.name,
         raw,
         ids,
         expected_error={
-            "reason": "max_tokens hit inside the second <parameter>; the call never closes.",
+            "reason": (
+                'max_tokens hit right after the opening <parameter name="unit"> tag, '
+                "before any value text; the call never closes."
+            ),
             "accept": accept,
         },
         tags=["truncated", "x-m2"],
