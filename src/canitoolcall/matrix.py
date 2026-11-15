@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
 from canitoolcall import __version__
+from canitoolcall.badges import cell_snippets, write_badges
 from canitoolcall.chunking import ChunkStrategy
 from canitoolcall.fixtures import (
     Family,
@@ -743,6 +744,7 @@ def render_site(
             (data_dir / name).write_text(read_results_text(path), encoding="utf-8")
         if matrix.run_for(run.engine.name, run.engine.version) is run:
             data_files[(run.engine.name, run.engine.version)] = f"data/{name}"
+    write_badges(matrix, out_dir)
     (out_dir / ".nojekyll").write_text("", encoding="utf-8")
     schema = default_spec_dir() / "matrix.schema.json"
     if schema.is_file():  # published at the schema's $id
@@ -804,6 +806,7 @@ def render_site(
                 corpus_note=corpus.note,
                 digest_matches=_digest_matches(cell_run, corpus),
                 have_corpus=bool(corpus.fixtures),
+                badges=cell_snippets(matrix, cell),
                 **common,
             ),
             encoding="utf-8",
