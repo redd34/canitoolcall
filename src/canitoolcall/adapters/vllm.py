@@ -164,6 +164,15 @@ PARSERS: dict[str, tuple[ModelRule, ...]] = {
         ),
         _rule(r"GLM-(4\.7|5)", "glm47", "glm47", "docs/formats/glm.md (vLLM v0.30.0 row)"),
     ),
+    "minimax": (
+        _rule(
+            r"MiniMax-M2",
+            "minimax_m2",
+            "minimax_m2",
+            "docs/formats/minimax.md (vLLM v0.30.0 row); the model cards use minimax_m2_append_think, "
+            "which keeps <think> in content",
+        ),
+    ),
     "llama": (
         _rule(r"Llama-4", "llama4_pythonic", None, "docs/formats/llama.md (vLLM v0.30.0 row)"),
         _rule(r"Llama-3", "llama3_json", None, "docs/formats/llama.md (vLLM v0.30.0 row)"),
