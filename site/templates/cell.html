@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import badge, counts_line, legend %}
 {% set fam_name = family_names.get(cell.family, cell.family) %}
+{% set page_description = "How " ~ cell.engine ~ " " ~ cell.engine_version ~ "'s own parsers handle " ~ fam_name ~ " on recorded outputs replayed offline: " ~ cell.status.value|replace("_", " ") ~ ", with each failing fixture, its expected parse and a repro command." %}
 {% block title %}{{ fam_name }} on {{ cell.engine }} {{ cell.engine_version }} · CanIToolCall{% endblock %}
 {% block main %}
 <nav aria-label="Breadcrumb" class="crumbs">

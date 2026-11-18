@@ -443,3 +443,455 @@ def test_run_synthetic_strategies_do_not_count(tmp_path: Path) -> None:
     page = render_site(_write(tmp_path, [one_token]), tmp_path / "site")
     cell_page = (page.parent / cell_path("ollama", "7af39318", "qwen3-hermes")).read_text(encoding="utf-8")
     assert "streams one token per event" in cell_page
+
+
+# --------------------------------------------------------------------------- matrix.json schema and lookup
+
+
+def _built_matrix_json(tmp_path: Path, sample_fixtures_dir: Path) -> Path:
+    out = tmp_path / "site"
+    render_site(_write(tmp_path, _sample_runs()), out, fixtures_dir=sample_fixtures_dir)
+    return out / "matrix.json"
+
+
+def test_matrix_json_validates_against_schema(tmp_path: Path, sample_fixtures_dir: Path) -> None:
+    import jsonschema
+
+    schema = json.loads((Path(__file__).parents[2] / "spec" / "matrix.schema.json").read_text(encoding="utf-8"))
+    jsonschema.Draft202012Validator.check_schema(schema)
+    data = json.loads(_built_matrix_json(tmp_path, sample_fixtures_dir).read_text(encoding="utf-8"))
+    jsonschema.validate(data, schema)
+    assert data["schema_version"] == "1.0"
+    assert "qwen3-hermes" in data["family_info"]
+
+
+def test_lookup_cli(tmp_path: Path, sample_fixtures_dir: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    path = _built_matrix_json(tmp_path, sample_fixtures_dir)
+    assert main(["lookup", "qwen3-hermes", "--matrix", str(path)]) == EXIT_OK
+    out = capsys.readouterr().out
+    assert "vllm 0.30.0" in out and "sglang 0.5.20" in out and "cells/vllm/0.30.0/qwen3-hermes.html" in out
+
+    assert main(["lookup", "QWEN3-HERMES", "--engine", "VLLM", "--json", "--matrix", str(path)]) == EXIT_OK
+    result = json.loads(capsys.readouterr().out)
+    assert result["family"] == "qwen3-hermes" and [c["engine"] for c in result["cells"]] == ["vllm"]
+    assert result["cells"][0]["status"] == "fail"
+    assert result["cells"][0]["url"] == (path.parent.resolve() / "cells/vllm/0.30.0/qwen3-hermes.html").as_uri()
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    model = data["family_info"]["qwen3-hermes"]["models"][0]
+    assert main(["lookup", model.lower(), "--json", "--matrix", str(path)]) == EXIT_OK
+    assert json.loads(capsys.readouterr().out)["matched_by"] == "model name"
+
+
+def test_lookup_errors(tmp_path: Path, sample_fixtures_dir: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    path = _built_matrix_json(tmp_path, sample_fixtures_dir)
+    assert main(["lookup", "no-such-family", "--matrix", str(path)]) == EXIT_ERROR
+    assert "unknown family or model" in capsys.readouterr().err
+    assert main(["lookup", "qwen3-hermes", "--engine", "nope", "--matrix", str(path)]) == EXIT_ERROR
+    assert "unknown engine" in capsys.readouterr().err
+    assert main(["lookup", "qwen3-hermes", "--matrix", str(tmp_path / "missing.json")]) == EXIT_ERROR
+    assert "cannot read" in capsys.readouterr().err
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for bad in ({**data, "schema_version": "2.0"}, {k: v for k, v in data.items() if k != "schema_version"}):
+        bad_path = tmp_path / "bad.json"
+        bad_path.write_text(json.dumps(bad), encoding="utf-8")
+        assert main(["lookup", "qwen3-hermes", "--matrix", str(bad_path)]) == EXIT_ERROR
+        assert "schema_version" in capsys.readouterr().err
+    bad_path.write_text("not json", encoding="utf-8")
+    assert main(["lookup", "qwen3-hermes", "--matrix", str(bad_path)]) == EXIT_ERROR
+
+
+def test_lookup_without_family_info_matches_slug_only(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    out = tmp_path / "site"
+    render_site(_write(tmp_path, _sample_runs()), out, fixtures_dir=tmp_path / "no-corpus")
+    path = out / "matrix.json"
+    assert "family_info" not in json.loads(path.read_text(encoding="utf-8"))
+    assert main(["lookup", "qwen3-hermes", "--matrix", str(path)]) == EXIT_OK
+    capsys.readouterr()
+    assert main(["lookup", "Qwen/Qwen3-8B", "--matrix", str(path)]) == EXIT_ERROR
+    assert "no model list" in capsys.readouterr().err
+
+
+def test_lookup_unreachable_url_is_an_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import urllib.error
+    import urllib.request
+
+    def boom(*args: object, **kwargs: object) -> None:
+        raise urllib.error.URLError("no network in tests")
+
+    monkeypatch.setattr(urllib.request, "urlopen", boom)
+    assert main(["lookup", "qwen3-hermes", "--matrix", "https://example.invalid/matrix.json"]) == EXIT_ERROR
+    assert "cannot read" in capsys.readouterr().err
+
+
+# --------------------------------------------------------------------------- lookup hardening
+
+
+def _doc(**cell: object) -> dict[str, object]:
+    base_cell = {
+        "family": "alpha",
+        "engine": "vllm",
+        "engine_version": "1.0",
+        "status": "pass",
+        "counts": {"pass": 1},
+        "pass_rate": 1.0,
+        "run_at": "2026-01-01T00:00:00Z",
+        "page": "cells/vllm/1.0/alpha.html",
+    }
+    return {
+        "schema_version": "1.0",
+        "families": ["alpha", "alphabet", "beta"],
+        "family_info": {
+            "alpha": {"name": "Alpha", "models": ["org/Alpha-7B"]},
+            "alphabet": {"name": "Alphabet", "models": ["org/Alphabet-1B"]},
+            "beta": {"name": "Beta", "models": ["org/Beta-3B"]},
+        },
+        "engines": [{"name": "vllm"}],
+        "cells": [{**base_cell, **cell}],
+    }
+
+
+def _write_doc(tmp_path: Path, doc: object) -> Path:
+    path = tmp_path / "m.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    return path
+
+
+def test_lookup_neutralises_control_characters(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    evil = "\x1b]0;pwned\x07\x9b2J"
+    doc = _doc(engine="vl" + evil, engine_version="1" + evil, page="cells/" + evil + ".html")
+    doc["families"] = ["alpha", evil]
+    doc["cells"][0]["family"] = "alpha"  # type: ignore[index]
+    doc["engines"] = [{"name": "vl" + evil}]
+    path = _write_doc(tmp_path, doc)
+    for extra in ([], ["--json"]):
+        assert main(["lookup", "alpha", "--matrix", str(path), *extra]) == EXIT_OK
+        out = capsys.readouterr().out
+        assert not any((ord(ch) < 0x20 and ch != "\n") or 0x7F <= ord(ch) < 0xA0 for ch in out)
+        assert "\\x1b" in out
+    assert main(["lookup", "zzz-nope", "--matrix", str(path)]) == EXIT_ERROR
+    err = capsys.readouterr().err
+    assert "\x1b" not in err and "\\x1b" in err
+
+
+def test_lookup_rejects_bad_status_and_pages(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["lookup", "alpha", "--matrix", str(_write_doc(tmp_path, _doc(status="great")))]) == EXIT_ERROR
+    assert "status" in capsys.readouterr().err
+    for page in (
+        "https://evil.example/x",
+        "//evil.example/x",
+        "/abs/x.html",
+        "../x.html",
+        "cells/../../x",
+        "javascript:alert(1)",
+    ):
+        path = _write_doc(tmp_path, _doc(page=page))
+        assert main(["lookup", "alpha", "--matrix", str(path)]) == EXIT_ERROR, page
+        assert "outside the site" in capsys.readouterr().err
+
+
+def test_lookup_rejects_oversized_body(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from canitoolcall import lookup as lk
+
+    monkeypatch.setattr(lk, "MAX_BYTES", 100)
+    path = tmp_path / "big.json"
+    path.write_text(" " * 200 + json.dumps(_doc()), encoding="utf-8")
+    with pytest.raises(lk.LookupFailure, match="larger than"):
+        lk.load_matrix(str(path))
+
+
+def test_lookup_old_matrix_without_schema_version_explains(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    doc = _doc()
+    del doc["schema_version"]
+    assert main(["lookup", "alpha", "--matrix", str(_write_doc(tmp_path, doc))]) == EXIT_ERROR
+    err = capsys.readouterr().err
+    assert "canitoolcall < 0.3" in err and "--matrix" in err and "nightly" in err
+
+
+def test_lookup_resolution(tmp_path: Path) -> None:
+    from canitoolcall.lookup import LookupFailure, resolve_family
+
+    doc = _doc()
+    assert resolve_family(doc, "alpha") == ("alpha", "family slug")  # exact beats the longer "alphabet"
+    assert resolve_family(doc, "ORG/beta-3b") == ("beta", "model name")
+    assert resolve_family(doc, "beta-3b") == ("beta", "model name")
+    assert resolve_family(doc, "beta-3") == ("beta", "partial match")
+    with pytest.raises(LookupFailure, match="several families"):
+        resolve_family(doc, "alp")
+    with pytest.raises(LookupFailure, match="at least 3"):
+        resolve_family(doc, "be")
+    with pytest.raises(LookupFailure, match="at least 3"):
+        resolve_family(doc, "b")
+
+
+def test_lookup_multi_version_engine_uses_latest(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    doc = _doc()
+    cells = doc["cells"]
+    assert isinstance(cells, list)
+    cells.append({**cells[0], "engine_version": "0.10.0", "status": "fail", "page": "cells/vllm/0.10.0/alpha.html"})
+    cells.append({**cells[0], "engine_version": "0.9.1", "page": "cells/vllm/0.9.1/alpha.html"})
+    path = _write_doc(tmp_path, doc)
+    assert main(["lookup", "alpha", "--json", "--matrix", str(path)]) == EXIT_OK
+    result = json.loads(capsys.readouterr().out)
+    assert [(c["engine_version"], c["status"]) for c in result["cells"]] == [("1.0", "pass")]
+    cells[0]["engine_version"] = "0.9.0"
+    path = _write_doc(tmp_path, doc)
+    assert main(["lookup", "alpha", "--json", "--matrix", str(path)]) == EXIT_OK
+    assert [c["engine_version"] for c in json.loads(capsys.readouterr().out)["cells"]] == ["0.10.0"]
+
+
+def test_lookup_over_http_and_page_base(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    import functools
+    import http.server
+    import threading
+
+    (tmp_path / "site").mkdir()
+    (tmp_path / "site" / "matrix.json").write_text(json.dumps(_doc()), encoding="utf-8")
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(tmp_path / "site"))
+    handler.log_message = lambda *a, **k: None  # type: ignore[attr-defined]
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_address[1]}/matrix.json"
+        assert main(["lookup", "alpha", "--json", "--matrix", url]) == EXIT_OK
+        result = json.loads(capsys.readouterr().out)
+        assert result["cells"][0]["url"] == url.replace("matrix.json", "cells/vllm/1.0/alpha.html")
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_render_site_publishes_matrix_schema(tmp_path: Path, sample_fixtures_dir: Path) -> None:
+    out = tmp_path / "site"
+    render_site(_write(tmp_path, _sample_runs()), out, fixtures_dir=sample_fixtures_dir)
+    published = json.loads((out / "spec" / "matrix.schema.json").read_text(encoding="utf-8"))
+    assert published["$id"] == "https://redd34.github.io/canitoolcall/spec/matrix.schema.json"
+
+
+def test_lookup_failure_messages_are_sanitised() -> None:
+    from canitoolcall.lookup import LookupFailure, lookup
+
+    assert "\x1b" not in str(LookupFailure("bad \x1b[31mred\x1b[0m ‮"))
+    assert str(LookupFailure("a\x1bb")) == "a\\x1bb"
+    hostile = {
+        "schema_version": "1.0",
+        "families": ["evil\x1b]0;pwned\x07"],
+        "engines": [{"name": "vllm", "version": "0.30.0"}],
+        "cells": [],
+    }
+    with pytest.raises(LookupFailure) as info:
+        lookup(hostile, "evil\x1b]0;pwned\x07", engine="vllm")
+    assert "\x1b" not in str(info.value) and "\x07" not in str(info.value)
+
+
+# --------------------------------------------------------------------------- per-model results and newest version
+
+
+def test_matrix_json_has_per_model_counts_from_fixture_models() -> None:
+    import jsonschema
+
+    from canitoolcall.matrix import matrix_json
+
+    cases = (
+        CaseResult("fam/a", "fam", Status.PASS, _passing_checks()),
+        CaseResult("fam/b", "fam", Status.UNSUPPORTED, reason="no parser"),
+        CaseResult("fam/c", "fam", Status.UNSUPPORTED, reason="no parser"),
+        CaseResult("other/x", "other", Status.PASS, _passing_checks()),
+    )
+    fixture_models = {"fam/a": ("org/A", "org/A2"), "fam/b": ("org/B",), "fam/c": ("org/B",)}
+    data = matrix_json(build_matrix([_run(cases=cases)]), fixture_models=fixture_models)
+    schema = json.loads((Path(__file__).parents[2] / "spec" / "matrix.schema.json").read_text(encoding="utf-8"))
+    jsonschema.validate(data, schema)
+    fam = next(c for c in data["cells"] if c["family"] == "fam")
+    assert fam["status"] == "pass"
+    assert fam["models"]["org/A"] == fam["models"]["org/A2"]
+    assert fam["models"]["org/A"]["status"] == "pass" and fam["models"]["org/A"]["pass_rate"] == 1.0
+    assert fam["models"]["org/B"] == {
+        "status": "unsupported",
+        "counts": {"pass": 0, "soft_pass": 0, "fail": 0, "error": 0, "unsupported": 2},
+        "pass_rate": None,
+    }
+    # a case whose fixture is not in the corpus: no per-model data rather than partial counts
+    other = next(c for c in data["cells"] if c["family"] == "other")
+    assert "models" not in other
+
+
+def test_render_site_writes_per_model_counts(tmp_path: Path, sample_fixtures_dir: Path) -> None:
+    out = tmp_path / "site"
+    run = _run(cases=(CaseResult(SAMPLE_ID, "qwen3-hermes", Status.PASS, _passing_checks()),))
+    render_site(_write(tmp_path, [run]), out, fixtures_dir=sample_fixtures_dir)
+    cell = json.loads((out / "matrix.json").read_text(encoding="utf-8"))["cells"][0]
+    assert cell["models"]["Qwen/Qwen3-0.6B"]["counts"]["pass"] == 1
+
+
+def _doc_with_models() -> dict[str, object]:
+    doc = _doc(counts={"pass": 2, "unsupported": 1})
+    doc["family_info"]["alpha"]["models"] = ["org/Alpha-7B", "org/Alpha-70B"]  # type: ignore[index]
+    doc["cells"][0]["models"] = {  # type: ignore[index]
+        "org/Alpha-7B": {"status": "unsupported", "counts": {"unsupported": 1}, "pass_rate": None},
+        "org/Alpha-70B": {"status": "pass", "counts": {"pass": 2}, "pass_rate": 1.0},
+    }
+    return doc
+
+
+def test_lookup_by_model_reports_that_model(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    path = _write_doc(tmp_path, _doc_with_models())
+    assert main(["lookup", "org/Alpha-7B", "--json", "--matrix", str(path)]) == EXIT_OK
+    result = json.loads(capsys.readouterr().out)
+    assert result["model"] == "org/Alpha-7B"
+    cell = result["cells"][0]
+    assert (cell["scope"], cell["status"], cell["pass_rate"], cell["counts"]) == (
+        "model",
+        "unsupported",
+        None,
+        {"unsupported": 1},
+    )
+    assert main(["lookup", "alpha-7b", "--matrix", str(path)]) == EXIT_OK
+    out = capsys.readouterr().out
+    assert "org/Alpha-7B" in out and "unsupported" in out and "whole family" not in out
+
+    assert main(["lookup", "alpha", "--json", "--matrix", str(path)]) == EXIT_OK
+    result = json.loads(capsys.readouterr().out)
+    assert result["model"] is None and result["cells"][0]["scope"] == "family"
+    assert result["cells"][0]["status"] == "pass"
+
+
+def test_lookup_by_model_without_per_model_data_says_whole_family(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = _write_doc(tmp_path, _doc())
+    assert main(["lookup", "org/Alpha-7B", "--json", "--matrix", str(path)]) == EXIT_OK
+    result = json.loads(capsys.readouterr().out)
+    assert result["model"] == "org/Alpha-7B"
+    assert (result["cells"][0]["scope"], result["cells"][0]["status"]) == ("family", "pass")
+    assert main(["lookup", "org/Alpha-7B", "--matrix", str(path)]) == EXIT_OK
+    assert "covers the whole family" in capsys.readouterr().out
+
+
+def test_lookup_rejects_malformed_per_model_data(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    doc = _doc_with_models()
+    doc["cells"][0]["models"]["org/Alpha-7B"]["status"] = "great"  # type: ignore[index]
+    assert main(["lookup", "alpha", "--matrix", str(_write_doc(tmp_path, doc))]) == EXIT_ERROR
+    assert "status" in capsys.readouterr().err
+
+
+def test_newest_cell_uses_run_at_not_version_strings() -> None:
+    from canitoolcall.lookup import newest_cell
+
+    older = {"engine_version": "ffff123", "run_at": "2026-01-01T00:00:00Z"}
+    newer = {"engine_version": "0abc999", "run_at": "2026-02-01T00:00:00+00:00"}
+    assert newest_cell([older, newer]) is newer
+    assert newest_cell([newer, older]) is newer
+    tie_a = {"engine_version": "aaa", "run_at": "2026-02-01T00:00:00Z"}
+    tie_b = {"engine_version": "bbb", "run_at": "2026-02-01T00:00:00Z"}
+    assert newest_cell([tie_a, tie_b]) is newest_cell([tie_b, tie_a]) is tie_b
+
+
+def test_lookup_picks_newest_hash_version_by_run_at(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    doc = _doc(engine_version="ffff123", run_at="2026-01-01T00:00:00Z", status="fail")
+    cells = doc["cells"]
+    assert isinstance(cells, list)
+    cells.append({**cells[0], "engine_version": "0abc999", "run_at": "2026-02-01T00:00:00Z", "status": "pass"})
+    assert main(["lookup", "alpha", "--json", "--matrix", str(_write_doc(tmp_path, doc))]) == EXIT_OK
+    assert [c["engine_version"] for c in json.loads(capsys.readouterr().out)["cells"]] == ["0abc999"]
+
+
+def test_lookup_rejects_null_run_at(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["lookup", "alpha", "--matrix", str(_write_doc(tmp_path, _doc(run_at=None)))]) == EXIT_ERROR
+    assert "run_at" in capsys.readouterr().err
+
+
+def test_lookup_bad_url_and_incomplete_read_exit_2(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import http.client
+    import urllib.request
+
+    assert main(["lookup", "alpha", "--matrix", "http://[::1"]) == EXIT_ERROR
+    assert "cannot read" in capsys.readouterr().err
+
+    class Resp:
+        def __enter__(self) -> Resp:
+            return self
+
+        def __exit__(self, *a: object) -> None:
+            return None
+
+        def read(self, n: int) -> bytes:
+            raise http.client.IncompleteRead(b"{", 10)
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: Resp())
+    assert main(["lookup", "alpha", "--matrix", "https://example.invalid/matrix.json"]) == EXIT_ERROR
+    assert "cannot read" in capsys.readouterr().err
+
+
+def test_lookup_page_links(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    import io
+    import urllib.request
+
+    body = json.dumps(_doc()).encode()
+
+    class Resp(io.BytesIO):
+        def __enter__(self) -> Resp:
+            return self
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: Resp(body))
+    assert main(["lookup", "alpha", "--json", "--matrix", "HTTPS://Example.org/m/matrix.json"]) == EXIT_OK
+    assert json.loads(capsys.readouterr().out)["cells"][0]["url"] == "https://Example.org/m/cells/vllm/1.0/alpha.html"
+
+    path = _write_doc(tmp_path, _doc())
+    assert main(["lookup", "alpha", "--json", "--matrix", str(path)]) == EXIT_OK
+    url = json.loads(capsys.readouterr().out)["cells"][0]["url"]
+    assert url == (tmp_path.resolve() / "cells" / "vllm" / "1.0" / "alpha.html").as_uri()
+
+
+def test_render_site_seo_without_site_url(tmp_path: Path) -> None:
+    out = tmp_path / "site"
+    html = render_site(_write(tmp_path, _sample_runs()), out).read_text(encoding="utf-8")
+    assert '<meta name="description" content="Does your model' in html
+    assert 'property="og:title"' in html
+    assert "This is not a ranking." in html
+    assert "canonical" not in html and "og:url" not in html and "og:image" not in html
+    assert not (out / "sitemap.xml").exists()
+    assert not (out / "robots.txt").exists()
+    assert (out / "assets" / "social.png").is_file()
+
+
+def test_render_site_with_site_url(tmp_path: Path) -> None:
+    out = tmp_path / "site"
+    index = render_site(_write(tmp_path, _sample_runs()), out, site_url="https://example.org/matrix")
+    html = index.read_text(encoding="utf-8")
+    assert '<link rel="canonical" href="https://example.org/matrix/">' in html
+    assert '<meta property="og:image" content="https://example.org/matrix/assets/social.png">' in html
+    assert 'content="summary_large_image"' in html
+    rel = cell_path("vllm", "0.30.0", "qwen3-hermes")
+    cell_html = (out / rel).read_text(encoding="utf-8")
+    assert f'<link rel="canonical" href="https://example.org/matrix/{rel}">' in cell_html
+    assert "How vllm 0.30.0&#39;s own parsers handle" in cell_html
+    sitemap = (out / "sitemap.xml").read_text(encoding="utf-8")
+    assert sitemap.startswith('<?xml version="1.0" encoding="UTF-8"?>')
+    assert "<loc>https://example.org/matrix/</loc>" in sitemap
+    assert f"<loc>https://example.org/matrix/{rel}</loc>" in sitemap
+    assert sitemap.count("<url>") == 1 + len(list((out / "cells").rglob("*.html")))
+
+
+@pytest.mark.parametrize(
+    "bad", ["example.org", "ftp://example.org/", "https://example.org/?x=1", "javascript:alert(1)"]
+)
+def test_render_site_rejects_bad_site_url(tmp_path: Path, bad: str) -> None:
+    with pytest.raises(ValueError, match="site-url"):
+        render_site(_write(tmp_path, _sample_runs()), tmp_path / "site", site_url=bad)
+
+
+def test_cli_matrix_site_url(tmp_path: Path) -> None:
+    results = _write(tmp_path, _sample_runs())
+    out = tmp_path / "site"
+    assert (
+        main(["matrix", "--results", str(results), "--out", str(out), "--site-url", "https://example.org/"]) == EXIT_OK
+    )
+    assert (out / "sitemap.xml").is_file()
+    assert main(["matrix", "--results", str(results), "--out", str(out), "--site-url", "nope"]) == EXIT_ERROR

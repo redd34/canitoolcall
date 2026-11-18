@@ -7,6 +7,10 @@ family's recorded outputs, parsed once without streaming and once per token-chun
 strict; whitespace-only differences, and malformed output whose recovered text differs between streaming and
 non-streaming, are counted separately as soft passes.
 {% if latest %}Latest run: <time datetime="{{ latest }}">{{ latest|date }}</time>.{% endif %}</p>
+<p class="lede"><strong>This is not a ranking.</strong> Engines support different subsets of the fixtures (a cell
+marked <em>unsupported</em> means the engine has no parser for that family), and some fails come from a deliberate
+policy, such as output cut off by <code>max_tokens</code>, rather than a mis-parse. Select a cell for the failing
+fixtures, their expected parse and a repro command.</p>
 
 {% if not matrix.runs %}
 <section class="empty" aria-labelledby="empty-h">

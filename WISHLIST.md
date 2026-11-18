@@ -48,7 +48,6 @@ These need a design agreed in the issue before code.
 |---|---|---|
 | Main-branch engine results ([#25](https://github.com/redd34/canitoolcall/issues/25), [design](docs/DESIGN-main-branch-columns.md)) | L | First step only: a manual-dispatch workflow that builds one engine's main at a resolved SHA, replays, and uploads the result. No site change until that is measured. |
 | MCP server for the matrix and the probe ([#29](https://github.com/redd34/canitoolcall/issues/29)) | M | An agent can ask "does model family X parse on engine Y?" and run a probe through MCP. |
-| A lookup command and a stable `matrix.json` schema (*no issue yet*) | M | `canitoolcall` can answer the family-on-engine question from the published `matrix.json` without a checkout, and the JSON has a versioned schema other tools can rely on. |
 | Provider observations ([#27](https://github.com/redd34/canitoolcall/issues/27), [design](docs/DESIGN-provider-matrix.md)) | L | Not started; the scope is undecided. Comments on the design are welcome. |
 
 ## Help that isn't code

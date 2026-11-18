@@ -7,6 +7,7 @@ A **fixture** is one raw model output together with the tools offered and the pa
 | [`fixture.schema.json`](fixture.schema.json) | One fixture record (one JSONL line) |
 | [`family.schema.json`](family.schema.json) | `fixtures/<slug>/family.json`, the metadata shared by a family |
 | [`results.schema.json`](results.schema.json) | The results file written by `canitoolcall run` |
+| [`matrix.schema.json`](matrix.schema.json) | The aggregated `matrix.json` published with the site |
 
 Validate everything with:
 
@@ -190,3 +191,18 @@ Strict equality gives `pass`. Soft-only equality gives `soft_pass`, which the ma
 |---|---|
 | 0.2 | Optional `assumes` and `finish` fields ([#9](https://github.com/redd34/canitoolcall/issues/9)). A 0.1 fixture is a valid 0.2 fixture. |
 | 0.1 | First published version. |
+
+## `matrix.json`
+
+`canitoolcall matrix` writes `matrix.json` next to the site (published at <https://redd34.github.io/canitoolcall/matrix.json>). `canitoolcall lookup` reads it, and other tools may too. Its schema is [`matrix.schema.json`](matrix.schema.json).
+
+| Field | Meaning |
+|---|---|
+| `schema_version` | `MAJOR.MINOR` string, currently `"1.0"` |
+| `canitoolcall_version` | version of the tool that built it |
+| `families` | family slugs |
+| `family_info` | optional `{slug: {name, models}}` (display name, HF repo ids from `family.json` and the fixtures); present when the corpus was available at build time |
+| `engines` | one entry per column: `name`, `version`, `commit`, `run_started_at`, `run_finished_at` |
+| `cells` | one per family and engine: `status` (worst over supported cases), `counts` per status, `pass_rate` (strict pass over supported cases, `null` if none), `stress_failures`, per-check `checks`, `run_at` (ISO 8601 time the run finished; pick an engine's newest version by this, not by the version string, which may be a commit hash), `page` (site-relative cell page), and optional `models`: `{repo: {status, counts, pass_rate}}` over the cases whose fixture lists that repo in its `models` (a fixture listing several models counts for each; present only when every case's fixture was in the corpus at build time) |
+
+Versioning rule: adding optional fields is a minor bump; removing or renaming a field, or changing its meaning, is a major bump. Readers must ignore unknown fields and must reject an unknown major version.

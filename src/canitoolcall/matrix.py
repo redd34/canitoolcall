@@ -574,6 +574,14 @@ def default_templates_dir() -> Path:
     return Path(__file__).resolve().parent / "_data" / "templates"
 
 
+def default_spec_dir() -> Path:
+    """``spec`` in a checkout, else the copy shipped in the wheel."""
+    root = repo_root()
+    if root is not None and (root / "spec").is_dir():
+        return root / "spec"
+    return Path(__file__).resolve().parent / "_data" / "spec"
+
+
 def _safe(part: str) -> str:
     """A path segment that is safe on every filesystem and in URLs."""
     return re.sub(r"[^A-Za-z0-9._-]", "_", part).lstrip(".") or "_"
@@ -649,11 +657,61 @@ def _environment(templates_dir: Path) -> jinja2.Environment:
     return env
 
 
-def matrix_json(matrix: Matrix) -> dict[str, Any]:
-    """The aggregated grid as plain JSON (written to ``matrix.json``)."""
+MATRIX_SCHEMA_VERSION = "1.0"
+"""``matrix.json`` schema version (``MAJOR.MINOR``, see ``spec/README.md``)."""
+
+
+def _family_info(corpus: _Corpus) -> dict[str, Any]:
+    """Display name and model repos per family, so ``lookup`` can resolve model names."""
+    info: dict[str, Any] = {}
+    for slug, fam in sorted(corpus.families.items()):
+        models = {m.repo for m in fam.reference_models}
+        models.update(m for fx in corpus.fixtures.values() if fx.family == slug for m in fx.models)
+        info[slug] = {"name": fam.name, "models": sorted(models)}
+    return info
+
+
+def _per_model(cell: Cell, fixture_models: Mapping[str, Sequence[str]]) -> dict[str, Any] | None:
+    """Status, counts and pass rate per model repo, from each case's fixture ``models``.
+
+    None when a case's fixture is missing from the corpus: partial counts would mislead.
+    """
+    if not cell.cases or any(c.fixture_id not in fixture_models for c in cell.cases):
+        return None
+    by_model: dict[str, list[CaseResult]] = {}
+    for case in cell.cases:
+        for model in fixture_models[case.fixture_id]:
+            by_model.setdefault(model, []).append(case)
+    out: dict[str, Any] = {}
+    for model, cases in sorted(by_model.items()):
+        counts = _empty_counts()
+        for case in cases:
+            counts[case_status(case, cell.synthetic).value] += 1
+        supported = [s for s in COUNTED if counts[s.value]]
+        total = sum(counts[s.value] for s in supported)
+        out[model] = {
+            "status": (worst_status(supported) if supported else Status.UNSUPPORTED).value,
+            "counts": counts,
+            "pass_rate": counts[Status.PASS.value] / total if total else None,
+        }
+    return out
+
+
+def matrix_json(
+    matrix: Matrix,
+    family_info: Mapping[str, Any] | None = None,
+    fixture_models: Mapping[str, Sequence[str]] | None = None,
+) -> dict[str, Any]:
+    """The aggregated grid as plain JSON (written to ``matrix.json``).
+
+    ``fixture_models`` maps fixture ids to their ``models``; with it, each cell
+    whose fixtures are all known gets per-model results under ``models``.
+    """
     return {
+        "schema_version": MATRIX_SCHEMA_VERSION,
         "canitoolcall_version": __version__,
         "families": list(matrix.families),
+        **({"family_info": dict(family_info)} if family_info else {}),
         "engines": [
             {
                 "name": r.engine.name,
@@ -676,6 +734,7 @@ def matrix_json(matrix: Matrix) -> dict[str, Any]:
                 "checks": {k.check: dict(k.counts) for k in c.checks},
                 "run_at": c.run_at,
                 "page": cell_path(c.engine, c.engine_version, c.family),
+                **({"models": m} if (m := _per_model(c, fixture_models or {})) else {}),
             }
             for c in matrix.cells
         ],
@@ -688,13 +747,21 @@ def render_site(
     templates_dir: Path | None = None,
     *,
     fixtures_dir: Path | None = None,
+    site_url: str | None = None,
 ) -> Path:
     """Render the static site; returns the path of ``index.html``.
 
     ``fixtures_dir`` (default: :func:`default_fixtures_dir`) is only used to
     show raw outputs and expected parses in the drill-down; a missing corpus
     does not stop the build. Files are overwritten, never deleted.
+
+    ``site_url`` is the absolute URL the site is published at. When given,
+    pages get canonical, ``og:url`` and ``og:image`` links and a ``sitemap.xml``
+    is written; without it the site stays location-independent. (No
+    ``robots.txt``: crawlers only read it at a host's root, which a project
+    page under a path does not own.)
     """
+    base_url = _site_base_url(site_url)
     templates_dir = templates_dir or default_templates_dir()
     if not (templates_dir / "index.html").is_file():
         raise FileNotFoundError(f"no site templates in {templates_dir}")
@@ -720,7 +787,14 @@ def render_site(
         if matrix.run_for(run.engine.name, run.engine.version) is run:
             data_files[(run.engine.name, run.engine.version)] = f"data/{name}"
     (out_dir / ".nojekyll").write_text("", encoding="utf-8")
-    (out_dir / "matrix.json").write_text(_pretty(matrix_json(matrix)) + "\n", encoding="utf-8")
+    schema = default_spec_dir() / "matrix.schema.json"
+    if schema.is_file():  # published at the schema's $id
+        (out_dir / "spec").mkdir(exist_ok=True)
+        shutil.copyfile(schema, out_dir / "spec" / "matrix.schema.json")
+    fixture_models = {i: fx.models for i, fx in corpus.fixtures.items()}
+    (out_dir / "matrix.json").write_text(
+        _pretty(matrix_json(matrix, _family_info(corpus), fixture_models)) + "\n", encoding="utf-8"
+    )
 
     family_names = {slug: fam.name for slug, fam in corpus.families.items()}
     engine_checks = {
@@ -733,6 +807,7 @@ def render_site(
         "version": __version__,
         "status_values": [s.value for s in Status],
         "family_names": family_names,
+        "site_url": base_url,
     }
 
     index = out_dir / "index.html"
@@ -745,6 +820,7 @@ def render_site(
             engine_checks=engine_checks,
             all_checks=all_checks,
             latest=latest,
+            page_url=base_url,
             **common,
         ),
         encoding="utf-8",
@@ -776,8 +852,36 @@ def render_site(
                 corpus_note=corpus.note,
                 digest_matches=_digest_matches(cell_run, corpus),
                 have_corpus=bool(corpus.fixtures),
+                page_url=f"{base_url}{rel}" if base_url else None,
                 **common,
             ),
             encoding="utf-8",
         )
+    if base_url:
+        pages = [base_url] + [f"{base_url}{cell_path(c.engine, c.engine_version, c.family)}" for c in matrix.cells]
+        (out_dir / "sitemap.xml").write_text(_sitemap(pages, latest), encoding="utf-8")
     return index
+
+
+def _site_base_url(site_url: str | None) -> str | None:
+    """``site_url`` with a trailing slash; rejects anything but an absolute http(s) URL."""
+    if site_url is None:
+        return None
+    parts = urlsplit(site_url)
+    if parts.scheme not in ("http", "https") or not parts.netloc or parts.query or parts.fragment:
+        raise ValueError(f"--site-url must be an absolute http(s) URL without query or fragment: {site_url!r}")
+    return site_url if site_url.endswith("/") else site_url + "/"
+
+
+def _sitemap(urls: Sequence[str], latest: str | None) -> str:
+    """A sitemaps.org urlset; ``lastmod`` is the newest run's date when known."""
+    from xml.sax.saxutils import escape
+
+    when = _parse_time(latest) if latest else None
+    lastmod = f"<lastmod>{when.date().isoformat()}</lastmod>" if when and when.year > 1 else ""
+    rows = "".join(f"  <url><loc>{escape(u)}</loc>{lastmod}</url>\n" for u in urls)
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        f"{rows}</urlset>\n"
+    )

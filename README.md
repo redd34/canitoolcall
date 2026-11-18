@@ -8,7 +8,9 @@
 
 **caniuse for tool calling:** see whether your model's tool calls survive your inference engine's parser, streaming included.
 
-[![The CanIToolCall matrix: 9 model families × 5 inference engines, from the 2026-09-25 snapshot](https://raw.githubusercontent.com/redd34/canitoolcall/main/docs/img/matrix.png)](https://redd34.github.io/canitoolcall/)
+It is for people who serve open-weight models and build agents on them, for inference-engine maintainers checking a parser change, and for model teams shipping a new tool-call format.
+
+[![The CanIToolCall matrix: 9 model families × 5 inference engines, from the 2026-11-15 snapshot](https://raw.githubusercontent.com/redd34/canitoolcall/main/docs/img/matrix.png)](https://redd34.github.io/canitoolcall/)
 
 **Check your own server in one line** (vLLM, SGLang, llama-server, Ollama, LM Studio or any OpenAI-compatible API):
 
@@ -274,6 +276,10 @@ Use `--canitoolcall-fixtures PATH` to test against your own copy of the corpus.
 **Why do engines have different fixture counts?** An engine version may simply have no parser for a model family's format. Those cases are reported as `unsupported`, and CanIToolCall never guesses in the engine's place.
 
 **What is a soft pass?** A result that differs from the expected one only in whitespace, such as a leading newline in the reasoning. It is also given when, for malformed or truncated output, streaming and non-streaming return the same calls but recover different text. The matrix shows soft passes separately from passes.
+
+**Does family or model X parse on engine Y?** Ask without a checkout: `canitoolcall lookup qwen3-hermes --engine vllm` (or a model name such as `Qwen/Qwen3.5-9B`, and `--json` for scripts). It reads the published [`matrix.json`](https://redd34.github.io/canitoolcall/matrix.json) (this works once the site has been rebuilt by a release that includes `lookup`; until then the published file has no `schema_version` and `lookup` says so, and `--matrix PATH_OR_URL` reads a newer one). The exit code is 0 whenever the lookup works, even if the status is `fail`; scripts should read `status` from `--json`. Queries of fewer than 3 characters only match exactly. The format is documented in [`spec/README.md`](spec/README.md#matrixjson).
+
+**What doesn't it cover yet?** Engines are pinned to one release each, not their main branches ([#25](https://github.com/redd34/canitoolcall/issues/25)). There are no fixtures yet for MiniMax ([#4](https://github.com/redd34/canitoolcall/issues/4)) or Nemotron ([#5](https://github.com/redd34/canitoolcall/issues/5)). Hosted providers are not in the matrix; you can point `probe` at one yourself ([#26](https://github.com/redd34/canitoolcall/issues/26)). `canitoolcall lookup` answers matrix questions from the command line (above); an MCP server is not available yet ([#29](https://github.com/redd34/canitoolcall/issues/29)). The [wishlist](WISHLIST.md) has the full list.
 
 **My engine or model isn't covered.** Adding a model family or an engine adapter is designed to be a single PR. See [CONTRIBUTING.md](CONTRIBUTING.md) and the [good first issues](https://github.com/redd34/canitoolcall/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
 
