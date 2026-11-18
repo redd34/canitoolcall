@@ -46,7 +46,18 @@ from canitoolcall.fixtures import (
     repo_root,
 )
 
-FAMILY_SLUGS = ("qwen3-hermes", "qwen3-xml", "gpt-oss", "deepseek", "kimi", "glm", "llama", "mistral", "gemma4")
+FAMILY_SLUGS = (
+    "qwen3-hermes",
+    "qwen3-xml",
+    "gpt-oss",
+    "deepseek",
+    "kimi",
+    "glm",
+    "llama",
+    "mistral",
+    "gemma4",
+    "seed-oss",
+)
 
 # --------------------------------------------------------------------------- fast (no engine)
 
@@ -84,6 +95,7 @@ FAMILY_SLUGS = ("qwen3-hermes", "qwen3-xml", "gpt-oss", "deepseek", "kimi", "glm
         ("mistral", "mistralai/Magistral-Small-2506", "mistral", "mistral"),
         ("mistral", "mistralai/Devstral-Small-2507", "mistral", None),
         ("gemma4", "google/gemma-4-31B-it", "gemma4", "gemma4"),
+        ("seed-oss", "ByteDance-Seed/Seed-OSS-36B-Instruct", "seed_oss", "seed_oss"),
     ],
 )
 def test_parser_map(family: str, model: str, tool: str, reasoning: str | None) -> None:

@@ -1,0 +1,35 @@
+{
+  "slug": "seed-oss",
+  "name": "ByteDance Seed-OSS",
+  "spec_version": "0.2",
+  "has_reasoning": true,
+  "markers": [
+    "<seed:tool_call>",
+    "</seed:tool_call>",
+    "<function=",
+    "</function>",
+    "<parameter=",
+    "</parameter>",
+    "<seed:think>",
+    "</seed:think>",
+    "<seed:cot_budget_reflect>",
+    "</seed:cot_budget_reflect>",
+    "<seed:bos>",
+    "<seed:eos>",
+    "<seed:pad>"
+  ],
+  "reference_models": [
+    {
+      "repo": "ByteDance-Seed/Seed-OSS-36B-Instruct",
+      "revision": "497f1dca95ebdec98e41d517b9f060ee753c902f",
+      "variant": "seed-oss",
+      "default_generation_prompt": "<seed:bos>assistant\n",
+      "stop_tokens": [
+        "<seed:eos>"
+      ],
+      "tokenizer_mode": "hf"
+    }
+  ],
+  "format_notes": "docs/formats/seed-oss.md",
+  "notes": "Qwen3-Coder-style XML wrapped in <seed:tool_call>...</seed:tool_call>, with <seed:think> reasoning that the model opens itself (the generation prompt pre-fills nothing unless thinking_budget=0). Values are written without wrapping newlines; non-string values are Python str() of the value, so a parser needs the tool schema. <seed:cot_budget_reflect> notes belong to the reasoning. Stop token from generation_config.json. Generator: scripts/fixtures/seed-oss/build.py."
+}

@@ -178,6 +178,14 @@ PARSERS: dict[str, tuple[ModelRule, ...]] = {
         _rule(r"mistral|ministral|devstral", "mistral", None, "Mistral model cards: --tool-call-parser mistral"),
     ),
     "gemma4": (_rule(r"gemma-4", "gemma4", "gemma4", "docs/formats/gemma4.md (vLLM v0.30.0 row)"),),
+    "seed-oss": (
+        _rule(
+            r"Seed-OSS",
+            "seed_oss",
+            "seed_oss",
+            "Seed-OSS model card: --tool-call-parser seed_oss; docs/formats/seed-oss.md (vLLM v0.30.0 row)",
+        ),
+    ),
 }
 """family slug -> ordered model rules (see :func:`resolve_parsers`)."""
 

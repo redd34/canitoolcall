@@ -135,7 +135,14 @@ def test_deepseek_v41_is_unsupported() -> None:
     assert sup.reason is not None and "V4.1" in sup.reason
 
 
-@pytest.mark.parametrize(("family", "model"), [("nope", "org/model"), ("llama", "meta-llama/Llama-2-7b-chat-hf")])
+@pytest.mark.parametrize(
+    ("family", "model"),
+    [
+        ("nope", "org/model"),
+        ("llama", "meta-llama/Llama-2-7b-chat-hf"),
+        ("seed-oss", "ByteDance-Seed/Seed-OSS-36B-Instruct"),
+    ],
+)
 def test_unknown_pairs_are_unsupported(family: str, model: str) -> None:
     sup = SglangAdapter().supports(family, model)
     assert not sup

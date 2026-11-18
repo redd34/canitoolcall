@@ -6,6 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- New family `seed-oss` (ByteDance Seed-OSS-36B-Instruct): format notes `docs/formats/seed-oss.md`, a generator `scripts/fixtures/seed-oss/build.py` and 30 fixtures (20 template renders at rev `497f1dc`, 6 token-prefix truncations, 4 llama.cpp `test-chat.cpp` imports). Parser mappings for vLLM (`seed_oss` tool and reasoning parsers) and llama.cpp (autoparser); SGLang, Ollama and transformers have no Seed-OSS parser at their pins and report `unsupported`.
 - The verifiers (`scripts/verify_upstream_pr.py`, `scripts/verify_compiled_pr.py`) now print the `unsupported` count on the `fixtures replayed` line, e.g. `fixtures replayed: 48 (N unsupported)`, and their JSON reports gain an `unsupported` field.
 
 ## [0.2.0] - 2026-11-15

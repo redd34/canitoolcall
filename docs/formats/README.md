@@ -17,6 +17,7 @@ These notes are the reference for writing fixtures. Every rendered example in th
 | [`llama`](llama.md) | Llama 3.1, 3.2, 3.3 and 4 | Llama-3.1-8B, 3.2-1B/3B, 3.3-70B, Llama-4-Scout/Maverick | 3.1/3.3: bare JSON `{"name":…, "parameters":…}`; 3.2/4: pythonic `[f(a=1)]` |
 | [`mistral`](mistral.md) | Mistral, Magistral, Devstral, Ministral | Mistral-Small-4, Mistral-Medium-3.5, Ministral-3, Devstral-2, Magistral-2509, Mistral-Small-3.2 | depends on tokenizer version: `[TOOL_CALLS][{…}]` (v3/v7), `[TOOL_CALLS]NAME[CALL_ID]ID[ARGS]{…}` (v11), `[TOOL_CALLS]NAME[ARGS]{…}` (v13+) |
 | [`gemma4`](gemma4.md) | Gemma 4 (and a note on Gemma 3) | gemma-4-31B-it, 26B-A4B-it, 12B-it, E4B/E2B-it | `<\|tool_call>call:NAME{key:<\|"\|>str<\|"\|>,n:3}<tool_call\|>`: **not JSON** |
+| [`seed-oss`](seed-oss.md) | ByteDance Seed-OSS (added 2026-11) | Seed-OSS-36B-Instruct | `<seed:tool_call>\n<function=NAME>\n<parameter=K>V</parameter>…` + `<seed:think>`; non-string values are Python `str()` |
 
 Cross-family rules for malformed and truncated output are in [`recovery.md`](recovery.md) (proposed, [#36](https://github.com/redd34/canitoolcall/issues/36)).
 

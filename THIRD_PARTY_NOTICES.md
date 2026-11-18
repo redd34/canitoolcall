@@ -32,6 +32,7 @@ every distribution are in `LICENSES/`.
 | `moonshotai/Kimi-K3` | Kimi K3 License, Copyright (c) 2026 Moonshot AI | `LICENSES/kimi-k3.txt` |
 | `meta-llama/Llama-3.3-70B-Instruct` (template via the `unsloth/Llama-3.3-70B-Instruct` mirror) | Llama 3.3 Community License | `LICENSES/llama3.3-community.txt` |
 | Qwen, Gemma 4, gpt-oss, Mistral repositories and `openai-harmony` | Apache-2.0 | `LICENSE` |
+| `ByteDance-Seed/Seed-OSS-36B-Instruct` | Apache-2.0 (the repository's `LICENSE.txt`; its copyright line is the unfilled `Copyright [2025] [name of copyright owner]` placeholder, and it ships no NOTICE file) | `LICENSE` |
 
 ## Short quotes
 
