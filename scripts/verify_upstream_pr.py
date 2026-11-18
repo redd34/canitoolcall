@@ -218,12 +218,16 @@ def main() -> int:
     changed = sorted((k, b[k], h[k]) for k in b if b[k] != h[k])
     fixed = [c for c in changed if c[1] in ("fail", "error") and c[2] in ("pass", "soft_pass")]
     regressed = [c for c in changed if c[1] in ("pass", "soft_pass") and c[2] in ("fail", "error")]
-    report.update(fixtures=len(b), changed=changed, fixed=len(fixed), regressed=len(regressed))
+    unsupported = sum(status == "unsupported" for status in h.values())
+    report.update(fixtures=len(b), unsupported=unsupported, changed=changed, fixed=len(fixed), regressed=len(regressed))
 
     other = len(changed) - len(fixed) - len(regressed)
     print(f"{repo}#{a.pr}  base {base[:9]} -> head {head[:9]}")
     print(f"({len(files)} file(s) swapped into the pinned {a.engine})")
-    print(f"fixtures replayed: {len(b)}   fixed: {len(fixed)}   regressed: {len(regressed)}   other changes: {other}")
+    print(
+        f"fixtures replayed: {len(b)} ({unsupported} unsupported)   fixed: {len(fixed)}   "
+        f"regressed: {len(regressed)}   other changes: {other}"
+    )
     for k, s0, s1 in changed:
         print(f"  {k}: {s0} -> {s1}")
     if a.json:

@@ -61,9 +61,11 @@ fixtures replayed: 48   fixed: 3   regressed: 0   other changes: 0
   gemma4/numeric-arguments: fail -> pass
 ```
 
+Runs since this change also print "(N unsupported)" on the `fixtures replayed` line.
+
 The exit code is 0 when nothing regressed, 1 on a regression, and 3 if the PR can't be replayed on the pinned engine or its replay reports are invalid or incomplete (including mismatched fixture inventories).
 
-**Report in the tracking issue here**, not only upstream. Paste the output and the base and head SHAs. Also say how many of the "fixtures replayed" were `unsupported`: those are counted but are not executed tests (the engine has no parser for that family), so the supported pass/fail counts are the real denominator. Ollama (Go) and llama.cpp (C++) rebuild complete sources into separate temporary workspaces. Use `--engine ollama --pr 18663 --family glm` and `--build-jobs 2`. Existing vocab-only GGUFs are required. See [compiled verification](docs/compiled-verification.md).
+**Report in the tracking issue here**, not only upstream. Paste the output and the base and head SHAs. The `fixtures replayed` line also gives the `unsupported` count (and the JSON report has an `unsupported` field): those fixtures are counted but are not executed tests (the engine has no parser for that family), so include that number and treat replayed minus unsupported as the real denominator. The count is taken at the PR head. Ollama (Go) and llama.cpp (C++) rebuild complete sources into separate temporary workspaces. Use `--engine ollama --pr 18663 --family glm` and `--build-jobs 2`. Existing vocab-only GGUFs are required. See [compiled verification](docs/compiled-verification.md).
 
 ## Rules (please follow them; they protect the project's credibility)
 

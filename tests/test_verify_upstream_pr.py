@@ -187,13 +187,14 @@ def test_valid_comparison_preserves_cli_contract(
 ) -> None:
     result = run_verifier(before, after)
     count = len(json.loads(before.reports[0])["cases"])
+    unsupported = sum(c["status"] == "unsupported" for c in json.loads(after.reports[0])["cases"])
     assert result.code == code
     assert result.replayed == ("base", "head")
     assert result.stderr == ""
     assert result.stdout == (
         f"sgl-project/sglang#1  base {BASE[:9]} -> head {HEAD[:9]}\n"
         "(2 file(s) swapped into the pinned sglang)\n"
-        f"fixtures replayed: {count}   fixed: {fixed}   regressed: {regressed}   "
+        f"fixtures replayed: {count} ({unsupported} unsupported)   fixed: {fixed}   regressed: {regressed}   "
         f"other changes: {len(changed) - fixed - regressed}\n"
         + "".join(f"  {key}: {old} -> {new}\n" for key, old, new in changed)
     )
@@ -205,6 +206,7 @@ def test_valid_comparison_preserves_cli_contract(
         "head": HEAD,
         "files": FILES,
         "fixtures": count,
+        "unsupported": unsupported,
         "changed": changed,
         "fixed": fixed,
         "regressed": regressed,

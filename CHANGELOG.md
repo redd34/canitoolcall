@@ -10,6 +10,10 @@ All notable changes to this project are documented here. The format follows
 
 - New model family `minimax` (MiniMax M2, M2.1, M2.5, M2.7; issue #4): format notes (`docs/formats/minimax.md`), a generator that renders through the pinned MiniMax-M2.1 chat template (modified MIT; M2, M2.5 and M2.7 are checked to render identically) (`scripts/fixtures/minimax/build.py`), 23 fixtures, and parser mappings for vLLM (`minimax_m2`) and SGLang (`minimax-m2`). llama.cpp, Ollama and transformers report the family `unsupported` until it is replayed there. MiniMax-M3 is not included.
 
+### Changed
+
+- The verifiers (`scripts/verify_upstream_pr.py`, `scripts/verify_compiled_pr.py`) now print the `unsupported` count on the `fixtures replayed` line, e.g. `fixtures replayed: 48 (N unsupported)`, and their JSON reports gain an `unsupported` field.
+
 ## [0.2.0] - 2026-11-15
 
 Fixture spec 0.2, a recovery contract for malformed and truncated output, 31 new fixtures (500 in total) and a

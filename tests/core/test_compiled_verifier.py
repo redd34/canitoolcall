@@ -60,9 +60,12 @@ def test_dropped_or_unsupported_cases_do_not_count_as_improvements(head):
 
 
 def test_comparison_counts_real_regressions_and_fixes():
-    value = compiled.compare({"a": "pass", "b": "fail"}, {"a": "error", "b": "soft_pass"})
+    value = compiled.compare(
+        {"a": "pass", "b": "fail", "c": "unsupported"}, {"a": "error", "b": "soft_pass", "c": "unsupported"}
+    )
     assert value == {
-        "fixtures": 2,
+        "fixtures": 3,
+        "unsupported": 1,
         "changed": [("a", "pass", "error"), ("b", "fail", "soft_pass")],
         "fixed": 1,
         "regressed": 1,
