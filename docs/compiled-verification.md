@@ -78,7 +78,8 @@ The hashes distinguish an absent pre-existing build from a preserved one.
 Exit 0 means no regression in a complete, comparable replay; exit 1 means a
 previously passing fixture failed; exit 3 means no reliable comparison was
 obtained. Missing, malformed or duplicate case records and build failures return
-3 instead of a misleading success. A valid per-fixture `error` (including a
+3 instead of a misleading success; these report checks live in `scripts/replay_report.py`, shared
+with the Python path. A valid per-fixture `error` (including a
 recorded `harness_error`) is retained, just as on the Python path: error-to-pass
 is a fix, pass-to-error a regression, and a pre-existing error alone does not
 invalidate the comparison. The summary includes the same `other changes` count.
