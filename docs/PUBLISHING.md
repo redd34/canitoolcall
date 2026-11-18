@@ -52,10 +52,11 @@ Nothing is pushed or published from the development machine. The repository, the
   | Workflow | `release.yml` |
   | Environment | `pypi` |
 
-- [ ] Set `__version__` in `src/canitoolcall/__init__.py`, for example `0.1.0`, and commit.
+- [ ] Set `__version__` in `src/canitoolcall/__init__.py`, for example `0.1.0`, and the `version` input's default in `action.yml` to the same value (a test checks they match), and commit.
 - [ ] Tag and push: `git tag v0.1.0 && git push origin v0.1.0`.
 - [ ] Go to **Actions → release → Run workflow**, choose the tag `v0.1.0` in "Use workflow from", and approve the `pypi` environment. The workflow refuses to run on anything but a `v*` tag, and fails if the tag does not match the built version.
 - [ ] Check the release from a clean machine: `uvx canitoolcall --version` and `uvx canitoolcall probe --help`.
+- [ ] Move the GitHub Action's major tag to the release so `uses: redd34/canitoolcall@v0` picks it up: `git tag -f v0 v0.1.0 && git push -f origin v0` (only after PyPI has the release, because the action installs it from there).
 
 ## 4. After release
 

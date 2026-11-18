@@ -6,6 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- GitHub Action (`action.yml`, related to #28): `uses: redd34/canitoolcall@v0` runs `canitoolcall probe` with the pinned release via `uvx`, writes a results table to the job summary (`scripts/probe_summary.py`), uploads the JSON report as an artifact and fails the job with the probe's exit code. The key is passed by variable name only. Docs and an Ollama example (untested) in [`docs/github-action.md`](docs/github-action.md); `.github/workflows/action-selftest.yml` runs it against the probe tests' mock server, which `scripts/probe_mock_server.py` now starts on its own. The `v0` tag still has to be pushed by a maintainer.
 - The verifiers (`scripts/verify_upstream_pr.py`, `scripts/verify_compiled_pr.py`) now print the `unsupported` count on the `fixtures replayed` line, e.g. `fixtures replayed: 48 (N unsupported)`, and their JSON reports gain an `unsupported` field.
 
 ## [0.2.0] - 2026-11-15

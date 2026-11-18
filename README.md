@@ -132,6 +132,15 @@ problems:
 
 **Keys and safety.** No API key is sent unless you set one: the key is read from `$CANITOOLCALL_API_KEY`, or from the variable you name with `--api-key-env` (pass `--api-key-env OPENAI_API_KEY` to use that one; it is never read by default, so an exported OpenAI key cannot leak to a third-party endpoint). The key is only sent in the `Authorization` header, only to `--base-url` (redirects are not followed), and is never logged. The probe refuses to send a key over plain `http://` to a host other than localhost unless you pass `--allow-insecure`. Add `--json report.json` to keep a machine-readable report. The exit code is `0` when everything passes, `1` on failures and `2` on usage errors or an unreachable endpoint.
 
+**In GitHub Actions.** The repository is also a composite action that runs `probe` in CI, writes a results table to the job summary, uploads the JSON report as an artifact, and fails the job when a scenario fails. [`docs/github-action.md`](docs/github-action.md) lists the inputs and has a workflow that starts a server in the job:
+
+```yaml
+      - uses: redd34/canitoolcall@v0   # see docs/github-action.md for tags and SHA pinning
+        with:
+          base-url: http://localhost:11434/v1
+          model: qwen3:0.6b
+```
+
 ### Replay the offline suite
 
 **Replay the offline suite against an engine.** This needs a checkout, because each engine runs in its own isolated environment:
