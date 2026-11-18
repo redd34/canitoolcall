@@ -128,6 +128,12 @@ problems:
   parallel-calls [stream] fail: tool-call delta without an integer 'index' (clients cannot merge deltas)
 ```
 
+**Responses API.** Agent CLIs such as Codex CLI talk to local servers over the OpenAI Responses API (`/v1/responses`), not `/chat/completions`. Add `--api responses` to send the same scenarios there, with tools as `{type: "function", name, parameters}`, earlier calls and results as `function_call` / `function_call_output` items, and the stream read from `response.*` events. `--api both` runs both APIs and adds an `api` column to the table. The default is `--api chat`. The checks are the same, plus Responses stream consistency: the stream must end with `response.completed`, and `response.function_call_arguments.done` and `response.output_item.done` must agree with the deltas. The shapes and their sources are in [`docs/probe-responses-api.md`](docs/probe-responses-api.md).
+
+```sh
+canitoolcall probe --base-url http://localhost:8000/v1 --model M --api both
+```
+
 **How it judges.** The model's exact output is unknown, so the checks are structural: a call to the right tool with arguments that match its schema, no format marker (`<tool_call>`, `<|call|>`, `[TOOL_CALLS]`, …) in `content`, tool names or arguments, and the same shape with and without streaming. Inside `reasoning_content`, reasoning delimiters such as `<think>` or Harmony's `<|channel|>` still fail, because a correct reasoning parser always strips them. Tool-call markers such as `<tool_call>` there are only a warning, because models often draft their call while thinking. A result with warnings is shown as `pass*` and the warnings are listed under the table. Warnings do not change the exit code.
 
 **Keys and safety.** No API key is sent unless you set one: the key is read from `$CANITOOLCALL_API_KEY`, or from the variable you name with `--api-key-env` (pass `--api-key-env OPENAI_API_KEY` to use that one; it is never read by default, so an exported OpenAI key cannot leak to a third-party endpoint). The key is only sent in the `Authorization` header, only to `--base-url` (redirects are not followed), and is never logged. The probe refuses to send a key over plain `http://` to a host other than localhost unless you pass `--allow-insecure`. Add `--json report.json` to keep a machine-readable report. The exit code is `0` when everything passes, `1` on failures and `2` on usage errors or an unreachable endpoint.

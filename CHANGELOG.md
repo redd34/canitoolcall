@@ -6,6 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- `probe --api {chat,responses,both}`: probe the OpenAI Responses API (`/v1/responses`) with the same scenarios and judgments, non-streaming and streaming (`response.*` SSE events, with `response.completed`, `.done` and `output_item.done` checked against the deltas). The default stays `chat`, so existing runs and exit codes are unchanged. Report outcomes gain an `api` field. Sources: [`docs/probe-responses-api.md`](docs/probe-responses-api.md).
 - The verifiers (`scripts/verify_upstream_pr.py`, `scripts/verify_compiled_pr.py`) now print the `unsupported` count on the `fixtures replayed` line, e.g. `fixtures replayed: 48 (N unsupported)`, and their JSON reports gain an `unsupported` field.
 
 ## [0.2.0] - 2026-11-15

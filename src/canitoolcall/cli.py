@@ -114,6 +114,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="allow sending an API key over plain http:// to a non-loopback host",
     )
+    pr.add_argument(
+        "--api",
+        choices=("chat", "responses", "both"),
+        default="chat",
+        help="API to probe: /chat/completions (default), /responses (OpenAI Responses API), or both",
+    )
     pr.add_argument("--no-stream", action="store_true", help="skip the streaming variants")
     pr.add_argument("--timeout", type=float, default=60.0, help="per-request timeout in seconds (default 60)")
     pr.add_argument("--concurrency", type=_positive_int, default=4, help="parallel requests (default 4)")
@@ -258,6 +264,7 @@ def cmd_probe(args: argparse.Namespace) -> int:
         stream_modes=(False,) if args.no_stream else (False, True),
         timeout_s=args.timeout,
         concurrency=args.concurrency,
+        apis=("chat", "responses") if args.api == "both" else (args.api,),
     )
     to_stdout = args.json is not None and str(args.json) == "-"
     print(report.render_text(), file=sys.stderr if to_stdout else sys.stdout)
