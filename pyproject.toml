@@ -47,6 +47,8 @@ dependencies = [
 #     the version and builds the isolated .venvs/<engine> (vllm==0.30.0, sglang==0.5.20).
 #   llamacpp / ollama: compiled harnesses (harnesses/<engine>/), built by scripts/engines/<engine>.sh.
 transformers = ["transformers==5.17.0", "jmespath>=1.0"]
+# `canitoolcall mcp`: a stdio MCP server (official SDK) for lookup, list_* and probe.
+mcp = ["mcp==2.3.0"]
 
 [project.scripts]
 canitoolcall = "canitoolcall.cli:main"
@@ -66,6 +68,7 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
     "types-jsonschema",
+    "mcp==2.3.0",  # tests for `canitoolcall mcp`; users get it from the `mcp` extra
 ]
 
 [tool.hatch.version]

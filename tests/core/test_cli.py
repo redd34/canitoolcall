@@ -44,15 +44,26 @@ def test_matrix_delegates_to_matrix_module(
     seen: dict[str, object] = {}
 
     def fake_render(
-        results: Path, out: Path, templates: Path | None = None, *, fixtures_dir: Path | None = None
+        results: Path,
+        out: Path,
+        templates: Path | None = None,
+        *,
+        fixtures_dir: Path | None = None,
+        site_url: str | None = None,
     ) -> Path:
-        seen.update(results=results, out=out, templates=templates, fixtures_dir=fixtures_dir)
+        seen.update(results=results, out=out, templates=templates, fixtures_dir=fixtures_dir, site_url=site_url)
         return out / "index.html"
 
     monkeypatch.setattr(canitoolcall.matrix, "render_site", fake_render)
     rc = main(["matrix", "--results", str(tmp_path / "r"), "--out", str(tmp_path / "o")])
     assert rc == EXIT_OK
-    assert seen == {"results": tmp_path / "r", "out": tmp_path / "o", "templates": None, "fixtures_dir": None}
+    assert seen == {
+        "results": tmp_path / "r",
+        "out": tmp_path / "o",
+        "templates": None,
+        "fixtures_dir": None,
+        "site_url": None,
+    }
     assert "index.html" in capsys.readouterr().out
     rc = main(["matrix", "--results", str(tmp_path / "r"), "--out", str(tmp_path / "o"), "--fixtures", "fx"])
     assert rc == EXIT_OK and seen["fixtures_dir"] == Path("fx")

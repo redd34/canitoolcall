@@ -177,12 +177,13 @@ def test_verify_forwards_timeout_to_both_builds_and_reports_other_changes(
 
     def replay(_root, _families, dest, _env):
         return (
-            {"fixed": "error", "other": "fail", "unchanged": "error"}
+            {"fixed": "error", "other": "fail", "unchanged": "error", "skip": "unsupported"}
             if dest.name == "base"
             else {
                 "fixed": "pass",
                 "other": "error",
                 "unchanged": "error",
+                "skip": "unsupported",
             }
         )
 
@@ -193,7 +194,9 @@ def test_verify_forwards_timeout_to_both_builds_and_reports_other_changes(
         args.append(seconds)
     assert compiled.verify(*args) == 0
     assert len(builds) == 2 and all(args[-1] == seconds for args in builds)
-    assert "fixtures replayed: 3   fixed: 1   regressed: 0   other changes: 1" in capsys.readouterr().out
+    assert (
+        "fixtures replayed: 4 (1 unsupported)   fixed: 1   regressed: 0   other changes: 1" in capsys.readouterr().out
+    )
     report = json.loads((tmp_path / "out.json").read_text())
     assert report["status"] == "compared" and report["pinned_unchanged"]
     assert pinned.read_bytes() == b"preserve this fixture"

@@ -25,16 +25,22 @@ reports, or echoed in error details.
 
 from __future__ import annotations
 
+import base64
+import contextlib
+import contextvars
+import http.client
 import ipaddress
 import json
+import re
 import socket
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any, Literal
 
@@ -480,7 +486,8 @@ def check_base_url(url: str) -> str:
         port = p.port  # raises ValueError for a bad port
     except ValueError as e:
         raise ValueError(f"invalid URL {url!r}: {e}") from None
-    del port
+    if port == 0:
+        raise ValueError("base URL port must not be 0")
     if p.scheme not in ("http", "https"):
         raise ValueError(f"base URL must start with http:// or https:// (got {safe_url(url) or url!r})")
     if not p.hostname:
@@ -489,7 +496,39 @@ def check_base_url(url: str) -> str:
         raise ValueError("base URL must not contain user:password@; pass the key with --api-key-env")
     if p.query or p.fragment:
         raise ValueError("base URL must not contain a query or fragment")
+    check_url_path(url)
     return url
+
+
+_CONTROL = re.compile(r"[\x00-\x20\x7f-\x9f]")
+_UNRESERVED = r"A-Za-z0-9._~\-"
+_SAFE_PATH = re.compile(
+    rf"(?:[{_UNRESERVED}/]|%(?:2[de]|3[0-9]|4[1-9a-f]|5[0-9af]|6[1-9a-f]|7[0-9ae]))*", re.IGNORECASE
+)
+"""Path characters allowed in a base URL: unreserved characters, '/', and ``%XX`` escapes that decode to
+unreserved characters only (so '%' itself, i.e. double encoding, is never accepted)."""
+
+
+def check_url_path(url: str) -> None:
+    """Reject URLs whose path could be read differently by the allowlist and by the server.
+
+    Refused: control characters or spaces anywhere, backslashes, encoded slashes, backslashes and NULs
+    (``%2f``, ``%5c``, ``%00``, any case), and ``.`` / ``..`` segments, raw or percent-encoded (``%2e``),
+    even double-encoded. ``;`` is refused, and so is any character outside ``[A-Za-z0-9._~-/]`` other than
+    ``%XX`` escapes of unreserved characters. Raises ``ValueError``.
+    """
+    if _CONTROL.search(url) or "\\" in url:
+        raise ValueError("base URL must not contain control characters, spaces or backslashes")
+    path = urllib.parse.urlsplit(url).path
+    if re.search(r"%(?:2f|5c|00)", path, re.IGNORECASE):
+        raise ValueError("base URL path must not contain encoded slashes, backslashes or NULs")
+    if ";" in path:
+        raise ValueError("base URL path must not contain ';' (matrix parameters)")
+    if not _SAFE_PATH.fullmatch(path):
+        raise ValueError("base URL path may only contain letters, digits, '._~-/' and %XX escapes of those")
+    for segment in path.split("/"):
+        if urllib.parse.unquote(segment) in (".", ".."):
+            raise ValueError("base URL path must not contain '.' or '..' segments")
 
 
 def is_loopback(url: str) -> bool:
@@ -535,6 +574,58 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 _OPENER = urllib.request.build_opener(_NoRedirect)
 
+ConnectFn = Callable[..., socket.socket]
+"""``socket.create_connection``-compatible: ``(address, timeout, source_address) -> socket``."""
+
+
+def guarded_opener(connect: ConnectFn) -> urllib.request.OpenerDirector:
+    """An opener that makes every TCP connection through ``connect`` instead of ``socket.create_connection``.
+
+    ``connect`` resolves and vets the address and connects to the vetted IP itself, so there is no gap between
+    the check and the connection (no DNS-rebinding window). Redirects are refused and environment proxies are
+    ignored (a proxy would connect on the caller's behalf, past the vetting). TLS still verifies the hostname.
+    """
+
+    def watched_connect(address: tuple[str, int], timeout: Any = None, source_address: Any = None) -> socket.socket:
+        dog = _WATCHDOG.get()
+        if dog is None:
+            return connect(address, timeout, source_address)
+        # The connect (and the TLS handshake after it) may take at most the time left to the deadline.
+        left = dog.remaining()
+        sock = connect(address, left if timeout is None else min(timeout, left), source_address)
+        dog.register(sock)
+        return sock
+
+    class _Http(http.client.HTTPConnection):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            self._create_connection = watched_connect
+
+        def connect(self) -> None:
+            super().connect()
+            if (dog := _WATCHDOG.get()) is not None and self.sock is not None:
+                dog.register(self.sock)
+
+    class _Https(http.client.HTTPSConnection):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            self._create_connection = watched_connect
+
+        def connect(self) -> None:
+            super().connect()
+            if (dog := _WATCHDOG.get()) is not None and self.sock is not None:
+                dog.register(self.sock)  # the TLS socket replaces the raw one
+
+    class _HttpHandler(urllib.request.HTTPHandler):
+        def http_open(self, req: urllib.request.Request) -> http.client.HTTPResponse:
+            return self.do_open(_Http, req)
+
+    class _HttpsHandler(urllib.request.HTTPSHandler):
+        def https_open(self, req: urllib.request.Request) -> http.client.HTTPResponse:
+            return self.do_open(_Https, req, context=getattr(self, "_context", None))
+
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect, _HttpHandler, _HttpsHandler)
+
 
 def safe_url(url: str) -> str:
     """``url`` without userinfo, query or fragment (they may carry credentials)."""
@@ -550,11 +641,47 @@ _MIN_REDACT = 8
 """Shorter keys are not redacted: replacing a 1-3 character string mangles messages."""
 
 
+def key_forms(key: str) -> list[str]:
+    """The key as it could appear in an echoed header or body: raw, ``Bearer`` form, base64 and percent-encoded."""
+    forms: set[str] = set()
+    for text in (key, f"Bearer {key}", f"Basic {key}"):
+        raw = text.encode("utf-8")
+        forms.update((text, urllib.parse.quote(text, safe=""), urllib.parse.quote_plus(text)))
+        for enc in (base64.b64encode, base64.urlsafe_b64encode):
+            b = enc(raw).decode("ascii")
+            forms.update((b, b.rstrip("=")))
+    return sorted(forms, key=len, reverse=True)  # longest first, so "Bearer <key>" goes before "<key>"
+
+
 def _redact(text: str, secret: str | None) -> str:
     if not secret or len(secret) < _MIN_REDACT:
         return text
-    for form in dict.fromkeys((secret, urllib.parse.quote(secret, safe=""), urllib.parse.quote_plus(secret))):
+    for form in key_forms(secret):
         text = text.replace(form, "***")
+    return text
+
+
+_MIN_PREFIX = 4
+
+
+def _clip_redacted(raw: bytes, n: int, secret: str | None) -> str:
+    """Redact the whole of ``raw`` (which may extend past ``n`` by the longest key form), then keep ``n`` bytes.
+
+    Redacting before truncating means a key straddling byte ``n`` is replaced whole; any trailing run that is
+    still a prefix (>= 4 chars) of a key form is dropped as well.
+    """
+    text = _redact(raw.decode("utf-8", "replace"), secret)
+    text = text.encode("utf-8")[:n].decode("utf-8", "ignore")
+    if secret and len(secret) >= _MIN_REDACT:
+        forms = key_forms(secret)
+        cut = True
+        while cut:
+            cut = False
+            for form in forms:
+                for k in range(min(len(form) - 1, len(text)), _MIN_PREFIX - 1, -1):
+                    if text.endswith(form[:k]):
+                        text, cut = text[:-k], True
+                        break
     return text
 
 
@@ -714,43 +841,189 @@ def _parse_message(payload: Mapping[str, Any], latency_s: float) -> ChatResponse
     )
 
 
+@dataclass(frozen=True)
+class ResponseLimits:
+    """Optional caps on one response (the CLI sets none; the MCP server sets all)."""
+
+    max_bytes: int | None = None
+    """Total bytes read from the body (JSON body, or all SSE lines)."""
+    deadline_s: float | None = None
+    """Wall-clock budget for the whole request, however slowly the server drips bytes."""
+    error_bytes: int = 300
+    """Bytes of an HTTP error body kept in the error message."""
+    ends_at: float | None = None
+    """``time.monotonic()`` time after which no request may still run (an overall cap on a whole probe)."""
+
+    def for_request(self) -> ResponseLimits:
+        """These limits for a request starting now: ``deadline_s`` shortened to the time left before ``ends_at``."""
+        if self.ends_at is None:
+            return self
+        left = self.ends_at - time.monotonic()
+        if left <= 0:
+            raise ProbeRequestError("probe exceeded its overall time limit")
+        return replace(self, deadline_s=left if self.deadline_s is None else min(self.deadline_s, left), ends_at=None)
+
+
+class _Budget:
+    def __init__(self, limits: ResponseLimits | None) -> None:
+        self.limit = limits.max_bytes if limits else None
+        self.deadline = time.monotonic() + limits.deadline_s if limits and limits.deadline_s else None
+        self.used = 0
+
+    def spend(self, n: int) -> None:
+        self.used += n
+        if self.limit is not None and self.used > self.limit:
+            raise ProbeRequestError(f"response larger than {self.limit} bytes")
+        if self.deadline is not None and time.monotonic() > self.deadline:
+            raise ProbeRequestError("request exceeded its overall deadline")
+
+    def lines(self, resp: Any) -> Iterator[bytes]:
+        """Lines of the body; reads whatever has arrived (``read1``) so the deadline is checked on every packet."""
+        buf = b""
+        while chunk := resp.read1(8192):
+            self.spend(len(chunk))
+            buf += chunk
+            *done, buf = buf.split(b"\n")
+            for line in done:
+                yield line + b"\n"
+        if buf:
+            yield buf
+
+    def read_all(self, resp: Any) -> bytes:
+        parts: list[bytes] = []
+        while chunk := resp.read1(65536):
+            self.spend(len(chunk))
+            parts.append(chunk)
+        return b"".join(parts)
+
+
+class _Watchdog:
+    """Shuts down the request's sockets when the wall-clock deadline passes, so a blocked connect, header
+    read, body read or error-body read ends at the deadline however slowly the server drips bytes."""
+
+    def __init__(self, seconds: float) -> None:
+        self.deadline = time.monotonic() + seconds
+        self.fired = False
+        self._socks: list[socket.socket] = []
+        self._lock = threading.Lock()
+        self._timer = threading.Timer(seconds, self._fire)
+        self._timer.daemon = True
+        self._timer.start()
+
+    def remaining(self) -> float:
+        if self.fired:
+            raise TimeoutError("request exceeded its overall deadline")
+        return max(self.deadline - time.monotonic(), 0.001)
+
+    def register(self, sock: socket.socket) -> None:
+        with self._lock:
+            self._socks.append(sock)
+            fired = self.fired
+        if fired:
+            self._kill(sock)
+
+    @staticmethod
+    def _kill(sock: socket.socket) -> None:
+        with contextlib.suppress(OSError, ValueError):
+            sock.shutdown(socket.SHUT_RDWR)
+
+    def _fire(self) -> None:
+        with self._lock:
+            self.fired = True
+            socks = list(self._socks)
+        for sock in socks:
+            self._kill(sock)
+
+    def cancel(self) -> None:
+        self._timer.cancel()
+
+
+_WATCHDOG: contextvars.ContextVar[_Watchdog | None] = contextvars.ContextVar("canitoolcall_watchdog", default=None)
+
+
 def chat_response(
-    base_url: str, model: str, scenario: Scenario, *, stream: bool, api_key: str | None = None, timeout_s: float = 60.0
+    base_url: str,
+    model: str,
+    scenario: Scenario,
+    *,
+    stream: bool,
+    api_key: str | None = None,
+    timeout_s: float = 60.0,
+    opener: urllib.request.OpenerDirector | None = None,
+    limits: ResponseLimits | None = None,
 ) -> ChatResponse:
     """One /chat/completions request with protocol diagnostics.
 
     Raises :class:`ProbeRequestError` on transport/HTTP failures; its message
-    never contains ``api_key``.
+    never contains ``api_key``. With ``limits.deadline_s`` the deadline covers everything from connect
+    to the last byte (error bodies included) for openers made by :func:`guarded_opener`.
     """
+    limits = limits.for_request() if limits else None
+    dog = _Watchdog(limits.deadline_s) if limits and limits.deadline_s and opener is not None else None
+    token = _WATCHDOG.set(dog)
+    try:
+        out = _chat_response(base_url, model, scenario, stream, api_key, timeout_s, opener, limits)
+    except ProbeRequestError:
+        if dog is not None and dog.fired:
+            raise ProbeRequestError("request exceeded its overall deadline") from None
+        raise
+    finally:
+        _WATCHDOG.reset(token)
+        if dog is not None:
+            dog.cancel()
+    if dog is not None and dog.fired:  # sockets were cut mid-body: the response may be partial
+        raise ProbeRequestError("request exceeded its overall deadline")
+    return out
+
+
+def _chat_response(
+    base_url: str,
+    model: str,
+    scenario: Scenario,
+    stream: bool,
+    api_key: str | None,
+    timeout_s: float,
+    opener: urllib.request.OpenerDirector | None,
+    limits: ResponseLimits | None,
+) -> ChatResponse:
     body = json.dumps(scenario.request_body(model, stream=stream), ensure_ascii=False).encode("utf-8")
     headers = {"Content-Type": "application/json", "Accept": "text/event-stream" if stream else "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     t0 = time.monotonic()
+    budget = _Budget(limits)
     try:
         req = urllib.request.Request(_endpoint(base_url), data=body, headers=headers, method="POST")
-        with _OPENER.open(req, timeout=timeout_s) as resp:
+        with (opener or _OPENER).open(req, timeout=timeout_s) as resp:
             ctype = resp.headers.get("Content-Type", "")
             if stream and "text/event-stream" in ctype:
                 acc = _Accumulator()
-                for data in iter_sse_data(resp):
+                for data in iter_sse_data(budget.lines(resp)):
                     if data.strip() == "[DONE]":
                         break
                     acc.add_chunk(json.loads(data))
                 return acc.finish(time.monotonic() - t0)
-            payload = json.loads(resp.read().decode("utf-8"))
+            payload = json.loads(budget.read_all(resp).decode("utf-8"))
             out = _parse_message(payload, time.monotonic() - t0)
             if stream:
                 note = f"stream=true was ignored (Content-Type {ctype or 'missing'!r}, not text/event-stream)"
                 return ChatResponse(out.result, out.latency_s, out.finish_reason, (*out.problems, note), out.warnings)
             return out
     except urllib.error.HTTPError as e:
-        snippet = e.read().decode("utf-8", "replace")[:300] if e.fp is not None else ""
-        raise ProbeRequestError(_redact(f"HTTP {e.code} {e.reason}: {snippet}".strip(), api_key)) from None
+        n = limits.error_bytes if limits else 300
+        extra = max((len(f.encode("utf-8")) for f in key_forms(api_key)), default=0) if api_key else 0
+        raw = e.read(n + extra) if e.fp is not None else b""
+        snippet = _clip_redacted(raw, n, api_key)
+        reason = f" {e.reason}" if limits is None else ""
+        raise ProbeRequestError(_redact(f"HTTP {e.code}{reason}: {snippet}".strip(), api_key)) from None
+    except ProbeRequestError:
+        raise
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         raise ProbeRequestError(_redact(f"request failed: {e}", api_key)) from None
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
         raise ProbeRequestError(f"unreadable response: {e}") from None
+    except http.client.HTTPException as e:  # InvalidURL, BadStatusLine, LineTooLong, IncompleteRead ...
+        raise ProbeRequestError(_redact(f"invalid HTTP exchange: {type(e).__name__}", api_key)) from None
     except ValueError as e:  # e.g. "unknown url type" from Request()
         raise ProbeRequestError(_redact(f"invalid request URL: {e}", api_key)) from None
 
@@ -972,10 +1245,19 @@ def compare_modes(nonstream: ParseResult, stream: ParseResult) -> tuple[ProbeSta
 
 
 def _run_one(
-    base_url: str, model: str, scenario: Scenario, stream: bool, api_key: str | None, timeout_s: float
+    base_url: str,
+    model: str,
+    scenario: Scenario,
+    stream: bool,
+    api_key: str | None,
+    timeout_s: float,
+    opener: urllib.request.OpenerDirector | None = None,
+    limits: ResponseLimits | None = None,
 ) -> ProbeOutcome:
     try:
-        resp = chat_response(base_url, model, scenario, stream=stream, api_key=api_key, timeout_s=timeout_s)
+        resp = chat_response(
+            base_url, model, scenario, stream=stream, api_key=api_key, timeout_s=timeout_s, opener=opener, limits=limits
+        )
     except ProbeRequestError as e:
         return ProbeOutcome(scenario.id, stream, "error", _redact(str(e), api_key), 0.0)
     status, detail, judged = evaluate_with_warnings(scenario, resp.result)
@@ -996,6 +1278,8 @@ def probe(
     stream_modes: Sequence[bool] = (False, True),
     timeout_s: float = 60.0,
     concurrency: int = 4,
+    opener: urllib.request.OpenerDirector | None = None,
+    limits: ResponseLimits | None = None,
 ) -> ProbeReport:
     """Run every scenario in every stream mode against the endpoint.
 
@@ -1006,7 +1290,9 @@ def probe(
     started = datetime.now(timezone.utc).isoformat(timespec="seconds")
     todo = [(sc, mode) for sc in (BUILTIN_SCENARIOS if scenarios is None else scenarios) for mode in stream_modes]
     with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
-        done = list(pool.map(lambda job: _run_one(base_url, model, job[0], job[1], api_key, timeout_s), todo))
+        done = list(
+            pool.map(lambda job: _run_one(base_url, model, job[0], job[1], api_key, timeout_s, opener, limits), todo)
+        )
 
     outcomes: list[ProbeOutcome] = []
     for sc in BUILTIN_SCENARIOS if scenarios is None else scenarios:

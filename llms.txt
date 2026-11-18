@@ -6,6 +6,7 @@ Use it to answer "will this model's tool calls parse correctly on this engine?",
 
 ## Quick use
 - Check a server: `uvx canitoolcall probe --base-url http://localhost:11434/v1 --model qwen3:8b`
+- Ask from an agent over MCP: `uvx --from 'canitoolcall[mcp]' canitoolcall mcp` (stdio; tools `lookup`, `list_families`, `list_engines`, `probe`; probe reaches loopback only and sends no API key unless the operator allows it with `--allow-base-url` / `--allow-api-key-env VAR=URL`; config in the README)
 - Matrix (every model family x engine): https://redd34.github.io/canitoolcall/
 - Verify an upstream parser fix PR: `uv run python scripts/verify_upstream_pr.py --engine sglang --pr <N> --family <slug>`
 

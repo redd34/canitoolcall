@@ -137,7 +137,7 @@ jobs:
           fi
           ls -l results
       - name: Build the site from the results files
-        run: uv run canitoolcall matrix --results results --out site/_build
+        run: uv run canitoolcall matrix --results results --out site/_build --site-url https://redd34.github.io/canitoolcall/
       - name: Publish the agent-facing files next to the matrix
         # llms.txt at the site root is where agents look for it (https://llmstxt.org).
         run: cp llms.txt AGENTS.md site/_build/

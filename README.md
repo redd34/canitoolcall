@@ -8,7 +8,9 @@
 
 **caniuse for tool calling:** see whether your model's tool calls survive your inference engine's parser, streaming included.
 
-[![The CanIToolCall matrix: 9 model families × 5 inference engines, from the 2026-09-25 snapshot](https://raw.githubusercontent.com/redd34/canitoolcall/main/docs/img/matrix.png)](https://redd34.github.io/canitoolcall/)
+It is for people who serve open-weight models and build agents on them, for inference-engine maintainers checking a parser change, and for model teams shipping a new tool-call format.
+
+[![The CanIToolCall matrix: 9 model families × 5 inference engines, from the 2026-11-15 snapshot](https://raw.githubusercontent.com/redd34/canitoolcall/main/docs/img/matrix.png)](https://redd34.github.io/canitoolcall/)
 
 **Check your own server in one line** (vLLM, SGLang, llama-server, Ollama, LM Studio or any OpenAI-compatible API):
 
@@ -275,7 +277,34 @@ Use `--canitoolcall-fixtures PATH` to test against your own copy of the corpus.
 ![vllm](https://img.shields.io/endpoint?url=https%3A%2F%2Fredd34.github.io%2Fcanitoolcall%2Fbadges%2Fvllm.json)
 ```
 
-If you host a fork, replace `https%3A%2F%2Fredd34.github.io%2Fcanitoolcall` with your site URL, percent-encoded (`:` as `%3A`, `/` as `%2F`). The snippets on cell pages always use the published site's URL (`BADGE_SITE_URL` in `src/canitoolcall/badges.py`).
+If you host a fork, replace `https%3A%2F%2Fredd34.github.io%2Fcanitoolcall` with your site URL, percent-encoded (`:` as `%3A`, `/` as `%2F`). The snippets on cell pages use the URL the site was built with (`canitoolcall matrix --site-url URL`), or the published site's URL without it.
+
+**Can my agent ask this over MCP?** Yes. `pip install 'canitoolcall[mcp]'` adds `canitoolcall mcp`, a stdio [MCP](https://modelcontextprotocol.io) server with four tools: `lookup` (same answer as `canitoolcall lookup --json`), `list_families`, `list_engines` and `probe`. Claude Code: `claude mcp add canitoolcall -- uvx --from 'canitoolcall[mcp]' canitoolcall mcp`. Other clients (generic `mcpServers` JSON):
+
+```json
+{
+  "mcpServers": {
+    "canitoolcall": {
+      "command": "uvx",
+      "args": ["--from", "canitoolcall[mcp]", "canitoolcall", "mcp"]
+    }
+  }
+}
+```
+
+The lookup tools read the published `matrix.json`, or the file or URL you start the server with (`... canitoolcall mcp --matrix PATH_OR_URL`); a tool caller cannot change it.
+
+`probe` sends the scripted requests (9 scenarios, each non-streaming and streaming) to the `base_url` the caller gives it, so **the operator decides where it may go, when the server starts**, and the tool description says it sends requests. Flags:
+
+- Default: only loopback (`127.0.0.0/8`, `::1`, `localhost`) is reachable and no API key is ever sent.
+- `--allow-base-url URL` (repeatable): a base URL the tool may also target, as a prefix: the same scheme, host and port, and that path or any path below it (whole segments, so `/v1` covers `/v1/x` but not `/v10`).
+- `--allow-api-key-env VAR=URL` (repeatable): the value of `VAR` is sent only to that exact base URL (which is also allowed as a target), and only as an `Authorization` header over `https://` or loopback (a plain `http://` non-loopback URL is refused at startup). The tool's `api_key_env` argument must name a `VAR` bound to the `base_url` it asks for. There is no default key variable.
+
+Example: `canitoolcall mcp --allow-api-key-env MY_VLLM_KEY=https://vllm.internal.example/v1`.
+
+*Security note.* The tool's arguments come from a model, so a prompt-injected model must not be able to steer the server. It cannot pick a key or a host that you did not pair: unbound environment variables are never read, a key is never attached to a different URL, and refusals say only "target not allowed by server configuration" (no resolved addresses). Outside loopback, a hostname is resolved and the connection goes to the vetted address in the same step; private, link-local, CGNAT, multicast, unspecified, reserved and cloud-metadata addresses (for example `169.254.169.254`) are refused, unless you allowlisted an IP literal yourself. A loopback name must resolve to loopback. Redirects are never followed and environment proxies are ignored, so a key cannot move to another origin. The key is never logged, and it is removed (raw, `Bearer` form, base64 and percent-encoded) from every string of the returned report, even if the endpoint echoes it; keys shorter than 8 characters are never sent. Base URLs with `.`/`..` segments, encoded slashes or backslashes, control characters or port 0 are refused, and IPv6 translation forms (IPv4-mapped to a private address, 6to4, Teredo, NAT64, `::/96`, site-local) count as internal. Each response is capped at 8 MB and `2 x timeout_s`, one whole probe call at 5 minutes, and at most 2 probe calls run at once (more are refused). **Loopback is allowed by default**, so a prompt-injected model can make `probe` send its scripted POSTs to any port or service on your machine, and the first 200 bytes of an HTTP error body or a redirect `Location` come back in the result; run the server where that is acceptable, or only enable `probe` for clients you trust. Without the extra, `canitoolcall mcp` exits with an install hint and everything else works as before.
+
+**What doesn't it cover yet?** Engines are pinned to one release each, not their main branches ([#25](https://github.com/redd34/canitoolcall/issues/25)). There are no fixtures yet for MiniMax ([#4](https://github.com/redd34/canitoolcall/issues/4)) or Nemotron ([#5](https://github.com/redd34/canitoolcall/issues/5)). Hosted providers are not in the matrix; you can point `probe` at one yourself ([#26](https://github.com/redd34/canitoolcall/issues/26)). The [wishlist](WISHLIST.md) has the full list.
 
 **My engine or model isn't covered.** Adding a model family or an engine adapter is designed to be a single PR. See [CONTRIBUTING.md](CONTRIBUTING.md) and the [good first issues](https://github.com/redd34/canitoolcall/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
 

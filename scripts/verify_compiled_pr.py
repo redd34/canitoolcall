@@ -206,7 +206,14 @@ def compare(base: dict[str, str], head: dict[str, str]) -> dict[str, object]:
     changed = sorted((key, base[key], head[key]) for key in base if base[key] != head[key])
     fixed = sum(old in BAD and new in GOOD for _, old, new in changed)
     regressed = sum(old in GOOD and new in BAD for _, old, new in changed)
-    return {"fixtures": len(base), "changed": changed, "fixed": fixed, "regressed": regressed}
+    unsupported = sum(status == "unsupported" for status in head.values())
+    return {
+        "fixtures": len(base),
+        "unsupported": unsupported,
+        "changed": changed,
+        "fixed": fixed,
+        "regressed": regressed,
+    }
 
 
 def report_destination(root: Path, output: Path | None) -> Path | None:
@@ -318,8 +325,8 @@ def verify(
         print("(two isolated full-source builds; pinned harness unchanged)")
         other = len(report["changed"]) - report["fixed"] - report["regressed"]  # type: ignore[arg-type,operator]
         print(
-            f"fixtures replayed: {report['fixtures']}   fixed: {report['fixed']}   "
-            f"regressed: {report['regressed']}   other changes: {other}"
+            f"fixtures replayed: {report['fixtures']} ({report['unsupported']} unsupported)   "
+            f"fixed: {report['fixed']}   regressed: {report['regressed']}   other changes: {other}"
         )
         for key, old, new in report["changed"]:  # type: ignore[union-attr]
             print(f"  {key}: {old} -> {new}")

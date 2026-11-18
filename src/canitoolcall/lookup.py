@@ -8,15 +8,18 @@ version 1 and rejects anything else.
 
 from __future__ import annotations
 
+import http.client
 import json
 import re
 import unicodedata
 import urllib.error
 import urllib.request
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
+from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
+from canitoolcall.matrix import _natural_key, _parse_time
 from canitoolcall.results import Status
 
 DEFAULT_SITE = "https://redd34.github.io/canitoolcall/"
@@ -59,25 +62,42 @@ def clean(text: object) -> str:
     return "".join(out)
 
 
-def _natural_key(text: str) -> tuple[tuple[int, int | str], ...]:
-    return tuple((0, int(p)) if p.isdigit() else (1, p) for p in re.split(r"(\d+)", text) if p)
-
-
-def _is_url(source: str) -> bool:
+def is_url(source: str) -> bool:
+    """True for an http(s) URL (scheme matched case-insensitively). Raises ValueError on a malformed URL."""
     return urlsplit(source).scheme in ("http", "https")
+
+
+def page_base(source: str) -> str:
+    """What cell ``page`` paths are relative to: the URL's directory, or the local file's directory as a URI."""
+    return urljoin(source, ".") if is_url(source) else Path(source).resolve().parent.as_uri() + "/"
+
+
+def newest_cell(cells: Iterable[Mapping[str, Any]]) -> Mapping[str, Any]:
+    """The most recently run cell: latest ``run_at``, ties broken by version (naturally sorted, then as text).
+
+    Versions can be commit hashes (llama.cpp, Ollama), so they never decide on their own.
+    """
+    return max(
+        cells,
+        key=lambda c: (
+            _parse_time(str(c["run_at"])),
+            _natural_key(str(c["engine_version"])),
+            str(c["engine_version"]),
+        ),
+    )
 
 
 def load_matrix(source: str, timeout: float = TIMEOUT) -> dict[str, Any]:
     """Read and version-check a matrix.json from a path or an http(s) URL."""
     try:
-        if _is_url(source):
+        if is_url(source):
             req = urllib.request.Request(source, headers={"User-Agent": "canitoolcall-lookup"})
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 raw = resp.read(MAX_BYTES + 1)
         else:
             with open(source, "rb") as fh:
                 raw = fh.read(MAX_BYTES + 1)
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError, http.client.HTTPException) as e:
         reason = getattr(e, "reason", e)
         raise LookupFailure(f"cannot read {clean(source)}: {clean(reason)}") from e
     if len(raw) > MAX_BYTES:
@@ -126,17 +146,17 @@ def check_version(data: Any, source: str = "matrix.json") -> None:
 def _check_cell(c: Any, source: str) -> None:
     if not isinstance(c, dict):
         raise LookupFailure(f"{source} is malformed: a cell is not an object")
-    for key in ("family", "engine", "engine_version", "page"):
+    for key in ("family", "engine", "engine_version", "run_at", "page"):
         if not isinstance(c.get(key), str):
             raise LookupFailure(f"{source} is malformed: a cell has no string {key!r}")
-    if c.get("status") not in _STATUSES:
-        raise LookupFailure(f"{source} has a cell with unknown status {clean(repr(c.get('status')))}")
-    rate = c.get("pass_rate")
-    if rate is not None and (isinstance(rate, bool) or not isinstance(rate, (int, float))):
-        raise LookupFailure(f"{source} is malformed: pass_rate must be a number or null")
-    counts = c.get("counts", {})
-    if not isinstance(counts, dict) or not all(isinstance(v, int) and not isinstance(v, bool) for v in counts.values()):
-        raise LookupFailure(f"{source} is malformed: counts must map names to integers")
+    _check_result(c, source)
+    models = c.get("models", {})
+    if not isinstance(models, dict):
+        raise LookupFailure(f"{source} is malformed: a cell's models is not an object")
+    for m in models.values():
+        if not isinstance(m, dict):
+            raise LookupFailure(f"{source} is malformed: a per-model result is not an object")
+        _check_result(m, source)
     page = c["page"]
     parts = page.replace("\\", "/").split("/")
     sp = urlsplit(page)
@@ -144,17 +164,36 @@ def _check_cell(c: Any, source: str) -> None:
         raise LookupFailure(f"{source} has a cell page outside the site ({clean(repr(page))})")
 
 
+def _check_result(r: Mapping[str, Any], source: str) -> None:
+    """``status``, ``pass_rate`` and ``counts`` of a cell or of one of its per-model results."""
+    if r.get("status") not in _STATUSES:
+        raise LookupFailure(f"{source} has a cell with unknown status {clean(repr(r.get('status')))}")
+    rate = r.get("pass_rate")
+    if rate is not None and (isinstance(rate, bool) or not isinstance(rate, (int, float))):
+        raise LookupFailure(f"{source} is malformed: pass_rate must be a number or null")
+    counts = r.get("counts", {})
+    if not isinstance(counts, dict) or not all(isinstance(v, int) and not isinstance(v, bool) for v in counts.values()):
+        raise LookupFailure(f"{source} is malformed: counts must map names to integers")
+
+
 def _norm(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", text.lower())
 
 
 def resolve_family(data: Mapping[str, Any], query: str) -> tuple[str, str]:
-    """Map a slug, family name or model name to a family slug.
+    """Map a slug, family name or model name to a family slug; returns ``(slug, how)``."""
+    slug, how, _ = resolve(data, query)
+    return slug, how
 
-    Returns ``(slug, how)``. Matching order: exact slug; family display name;
-    a model repo id (full or the part after ``org/``) from ``family_info``;
-    then a unique slug/name/model substring (only for queries of at least
-    ``MIN_PARTIAL`` characters). Case-insensitive throughout.
+
+def resolve(data: Mapping[str, Any], query: str) -> tuple[str, str, str | None]:
+    """Map a slug, family name or model name to ``(slug, how, model)``.
+
+    ``model`` is the repo id when the query named exactly one model, else None.
+    Matching order: exact slug; family display name; a model repo id (full or
+    the part after ``org/``) from ``family_info``; then a unique slug/name/model
+    substring (only for queries of at least ``MIN_PARTIAL`` characters).
+    Case-insensitive throughout.
     """
     families: list[str] = list(data["families"])
     info: Mapping[str, Any] = data.get("family_info") or {}
@@ -164,19 +203,24 @@ def resolve_family(data: Mapping[str, Any], query: str) -> tuple[str, str]:
 
     for slug in families:
         if _norm(slug) == q:
-            return slug, "family slug"
+            return slug, "family slug", None
     for slug in families:
         if _norm(str(info.get(slug, {}).get("name", ""))) == q:
-            return slug, "family name"
-    exact = _hits(families, info, lambda m: q in {_norm(m), _norm(m.split("/", 1)[-1])}, models_only=True)
+            return slug, "family name", None
+
+    def is_model(m: str) -> bool:
+        return q in {_norm(m), _norm(m.split("/", 1)[-1])}
+
+    exact = _hits(families, info, is_model, models_only=True)
     if len(exact) == 1:
-        return exact[0], "model name"
+        models = [str(m) for m in info[exact[0]].get("models", []) if is_model(str(m))]
+        return exact[0], "model name", models[0] if len(models) == 1 else None
     if len(exact) > 1:
         raise _ambiguous(query, exact)
 
     loose = _hits(families, info, lambda s: q in _norm(s)) if len(q) >= MIN_PARTIAL else []
     if len(loose) == 1:
-        return loose[0], "partial match"
+        return loose[0], "partial match", None
     if len(loose) > 1:
         raise _ambiguous(query, loose)
     note = f" (partial matches need at least {MIN_PARTIAL} characters)" if len(q) < MIN_PARTIAL else ""
@@ -204,8 +248,12 @@ def _ambiguous(query: str, slugs: list[str]) -> LookupFailure:
 def lookup(
     data: Mapping[str, Any], query: str, engine: str | None = None, base_url: str = DEFAULT_SITE
 ) -> dict[str, Any]:
-    """Answer the question; every string in the result is made print-safe. Raises :class:`LookupFailure`."""
-    family, how = resolve_family(data, query)
+    """Answer the question; every string in the result is made print-safe. Raises :class:`LookupFailure`.
+
+    When the query named one model and a cell has per-model results for it, that cell reports the
+    model's results (``scope`` "model"); otherwise the whole family's (``scope`` "family").
+    """
+    family, how, model = resolve(data, query)
     engines = sorted({str(e["name"]) for e in data["engines"]})
     if engine is not None and engine.lower() not in {e.lower() for e in engines}:
         raise LookupFailure(clean(f"unknown engine {engine!r}; engines in this matrix: {', '.join(engines)}"))
@@ -216,45 +264,51 @@ def lookup(
     ]
     if not cells:
         raise LookupFailure(f"the matrix has no cell for {family} on {engine or 'any engine'}")
-    # One row per engine: the latest version, as the matrix columns sort them.
-    newest: dict[str, dict[str, Any]] = {}
+    # One row per engine: its most recently run version.
+    by_engine: dict[str, list[Mapping[str, Any]]] = {}
     for c in cells:
-        key = str(c["engine"])
-        if key not in newest or _natural_key(str(c["engine_version"])) >= _natural_key(
-            str(newest[key]["engine_version"])
-        ):
-            newest[key] = c
+        by_engine.setdefault(str(c["engine"]), []).append(c)
+    rows = []
+    for name in sorted(by_engine):
+        c = newest_cell(by_engine[name])
+        r = (c.get("models") or {}).get(model) if model is not None else None
+        rows.append(
+            {
+                "engine": clean(c["engine"]),
+                "engine_version": clean(c["engine_version"]),
+                "scope": "family" if r is None else "model",
+                "status": (r or c)["status"],
+                "pass_rate": (r or c).get("pass_rate"),
+                "counts": {clean(k): v for k, v in (r or c).get("counts", {}).items()},
+                "run_at": clean(c["run_at"]),
+                "url": clean(urljoin(base_url, str(c["page"]))),
+            }
+        )
     return {
         "query": clean(query),
         "family": clean(family),
         "matched_by": how,
+        "model": None if model is None else clean(model),
         "schema_version": clean(data["schema_version"]),
-        "cells": [
-            {
-                "engine": clean(c["engine"]),
-                "engine_version": clean(c["engine_version"]),
-                "status": c["status"],
-                "pass_rate": c.get("pass_rate"),
-                "counts": {clean(k): v for k, v in c.get("counts", {}).items()},
-                "run_at": None if c.get("run_at") is None else clean(c["run_at"]),
-                "url": clean(urljoin(base_url, str(c["page"]))),
-            }
-            for c in sorted(newest.values(), key=lambda c: str(c["engine"]))
-        ],
+        "cells": rows,
     }
 
 
 def format_table(result: Mapping[str, Any]) -> str:
     """A short human table for :func:`lookup` output."""
     lines = [clean(f"{result['family']} (matched {result['query']!r} by {result['matched_by']})")]
+    model = result.get("model")
+    if model is not None:
+        lines.append(clean(f"rows show {model} only, except those marked *"))
     rows = []
     for c in result["cells"]:
+        mark = "*" if model is not None and c["scope"] == "family" else ""
         rate = "n/a" if c["pass_rate"] is None else f"{c['pass_rate'] * 100:.0f}%"
         counts = " ".join(f"{k}={v}" for k, v in c["counts"].items() if v)
         rows.append(
             (
                 clean(f"{c['engine']} {c['engine_version']}"),
-                clean(c["status"]),
+                clean(c["status"]) + mark,
                 rate,
                 clean(counts or "-"),
                 clean(c["url"]),
@@ -264,4 +318,6 @@ def format_table(result: Mapping[str, Any]) -> str:
     widths = [max(len(r[i]) for r in [head, *rows]) for i in range(4)]
     for r in [head, *rows]:
         lines.append("  ".join(r[i].ljust(widths[i]) for i in range(4)) + "  " + r[4])
+    if any(r[1].endswith("*") for r in rows):
+        lines.append("* no per-model results in this matrix.json: the row covers the whole family")
     return "\n".join(lines)

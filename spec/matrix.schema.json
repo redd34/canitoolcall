@@ -50,7 +50,20 @@
           "stress_failures": { "type": "integer", "minimum": 0 },
           "checks": { "type": "object", "additionalProperties": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } } },
           "run_at": { "type": "string" },
-          "page": { "type": "string", "description": "Cell page path relative to the site root." }
+          "page": { "type": "string", "description": "Cell page path relative to the site root." },
+          "models": {
+            "description": "Optional per-model results: model repo id -> status, counts and pass_rate over the cell's cases whose fixture lists that model in its `models`. A fixture listing several models counts for each. Present only when every case's fixture was in the corpus at build time.",
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "required": ["status", "counts", "pass_rate"],
+              "properties": {
+                "status": { "enum": ["pass", "soft_pass", "fail", "error", "unsupported"] },
+                "counts": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } },
+                "pass_rate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
+              }
+            }
+          }
         }
       }
     }

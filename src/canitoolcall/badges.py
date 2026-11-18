@@ -16,14 +16,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
-from canitoolcall.lookup import DEFAULT_SITE
+from canitoolcall.lookup import DEFAULT_SITE, newest_cell
 from canitoolcall.results import Status, worst_status
 
 if TYPE_CHECKING:
     from canitoolcall.matrix import Cell, Matrix
 
 BADGE_SITE_URL = DEFAULT_SITE
-"""Site URL used in Markdown snippets: the published site. Replace it with your own when publishing a fork."""
+"""Site URL used in Markdown snippets when the site is built without ``--site-url``: the published site."""
 
 STATUS_COLORS: dict[str, str] = {
     Status.PASS.value: "brightgreen",
@@ -85,8 +85,11 @@ def engine_badge(engine: str, cells: list[Cell]) -> dict[str, Any]:
 
 
 def newest_versions(matrix: Matrix) -> dict[str, str]:
-    """Newest version per engine (``matrix.engines`` is sorted by natural version order)."""
-    return dict(matrix.engines)
+    """Newest version per engine: latest ``run_at``, as ``lookup.newest_cell`` picks it (versions may be hashes)."""
+    by_engine: dict[str, list[dict[str, str]]] = {}
+    for c in matrix.cells:
+        by_engine.setdefault(c.engine, []).append({"run_at": c.run_at, "engine_version": c.engine_version})
+    return {engine: str(newest_cell(cells)["engine_version"]) for engine, cells in by_engine.items()}
 
 
 def badge_files(matrix: Matrix) -> dict[str, dict[str, Any]]:

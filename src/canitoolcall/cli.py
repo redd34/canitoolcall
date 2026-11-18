@@ -1,9 +1,10 @@
-"""Command-line interface: ``canitoolcall {run,probe,matrix,lookup,validate,engines}``.
+"""Command-line interface: ``canitoolcall {run,probe,matrix,lookup,mcp,validate,engines}``.
 
 * ``run --engine E``        offline suite: replay fixtures through engine E's parsers
 * ``probe --base-url --model``  live check of an OpenAI-compatible endpoint
 * ``matrix``               build the static matrix site from ``results/*.json``
 * ``lookup NAME``          does family or model NAME parse on an engine? (reads matrix.json)
+* ``mcp``                  stdio MCP server: lookup, list_families, list_engines, probe (needs canitoolcall[mcp])
 * ``validate [PATH...]``   validate fixtures and family.json against the spec
 * ``engines``              list known engines and the interpreter each would use
 
@@ -142,6 +143,35 @@ def build_parser() -> argparse.ArgumentParser:
         "fail: scripts should read the status from this output",
     )
 
+    mc = sub.add_parser("mcp", help="run a stdio MCP server (needs the 'mcp' extra: pip install canitoolcall[mcp])")
+    mc.add_argument(
+        "--matrix",
+        default=None,
+        metavar="PATH_OR_URL",
+        help="matrix.json the lookup tools read (default: the published one); callers cannot change it",
+    )
+    mc.add_argument(
+        "--allow-base-url",
+        action="append",
+        default=[],
+        metavar="URL",
+        help=(
+            "base URL (scheme, host, port, path prefix) the probe tool may target besides loopback "
+            "(repeatable). By default only loopback is reachable; private/link-local/metadata addresses "
+            "are refused after DNS resolution unless the URL is an allowlisted IP literal"
+        ),
+    )
+    mc.add_argument(
+        "--allow-api-key-env",
+        action="append",
+        default=[],
+        metavar="VAR=URL",
+        help=(
+            "environment variable whose value the probe tool may send as an API key, ONLY to this exact base URL "
+            "(repeatable; the URL is also allowed as a target). No key is ever sent by default"
+        ),
+    )
+
     m = sub.add_parser("matrix", help="build the static matrix site from results files")
     m.add_argument(
         "--results",
@@ -161,6 +191,11 @@ def build_parser() -> argparse.ArgumentParser:
             "fixture corpus for drill-down pages (default: $CANITOOLCALL_FIXTURES, else the checkout's "
             "fixtures/, else the corpus bundled with the package)"
         ),
+    )
+    m.add_argument(
+        "--site-url",
+        default=None,
+        help="absolute URL the site will be published at; adds canonical and preview links and a sitemap.xml",
     )
 
     v = sub.add_parser("validate", help="validate fixtures against the spec")
@@ -294,7 +329,7 @@ def cmd_matrix(args: argparse.Namespace) -> int:
         print(f"canitoolcall matrix: {no_results_hint(args.results)}", file=sys.stderr)
         return EXIT_ERROR
     try:
-        index = render_site(args.results, args.out, args.templates, fixtures_dir=args.fixtures)
+        index = render_site(args.results, args.out, args.templates, fixtures_dir=args.fixtures, site_url=args.site_url)
     except (FileNotFoundError, ValueError) as e:
         print(f"canitoolcall matrix: {e}", file=sys.stderr)
         return EXIT_ERROR
@@ -303,19 +338,36 @@ def cmd_matrix(args: argparse.Namespace) -> int:
 
 
 def cmd_lookup(args: argparse.Namespace) -> int:
-    from urllib.parse import urljoin
-
-    from canitoolcall.lookup import DEFAULT_MATRIX, LookupFailure, format_table, load_matrix, lookup
+    from canitoolcall.lookup import DEFAULT_MATRIX, LookupFailure, format_table, load_matrix, lookup, page_base
 
     source = args.matrix or DEFAULT_MATRIX
-    # Page paths are relative to the matrix's own location: its URL's directory, or nothing for a file.
-    base = urljoin(source, ".") if source.startswith(("http://", "https://")) else ""
     try:
-        result = lookup(load_matrix(source), args.name, args.engine, base)
+        data = load_matrix(source)  # rejects a malformed URL before page_base sees it
+        result = lookup(data, args.name, args.engine, page_base(source))
     except LookupFailure as e:
         print(f"canitoolcall lookup: {e}", file=sys.stderr)
         return EXIT_ERROR
     print(json.dumps(result, indent=2) if args.json else format_table(result))
+    return EXIT_OK
+
+
+def cmd_mcp(args: argparse.Namespace) -> int:
+    import importlib.util
+
+    if importlib.util.find_spec("mcp") is None:
+        print(
+            "canitoolcall mcp: the MCP server needs the optional extra: pip install 'canitoolcall[mcp]'",
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+    from canitoolcall.mcp_server import ProbePolicy, serve
+
+    try:
+        policy = ProbePolicy.parse(args.allow_base_url, args.allow_api_key_env)
+    except ValueError as e:
+        print(f"canitoolcall mcp: {e}", file=sys.stderr)
+        return EXIT_ERROR
+    serve(args.matrix, policy)
     return EXIT_OK
 
 
@@ -353,6 +405,7 @@ COMMANDS = {
     "probe": cmd_probe,
     "matrix": cmd_matrix,
     "lookup": cmd_lookup,
+    "mcp": cmd_mcp,
     "validate": cmd_validate,
     "engines": cmd_engines,
 }
