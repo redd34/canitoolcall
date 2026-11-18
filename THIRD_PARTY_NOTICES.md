@@ -27,6 +27,7 @@ every distribution are in `LICENSES/`.
 | `deepseek-ai/DeepSeek-V3-0324`, `-V3.1`, `-V3.2`, `-V4-Flash`, `-V4.1-Flash` | MIT, Copyright (c) 2023 DeepSeek | `LICENSES/deepseek-MIT.txt` |
 | `zai-org/GLM-4.5`, `zai-org/GLM-4.7` | MIT (declared in the model card metadata; the repositories ship no LICENSE file and name no copyright holder) | the MIT text as in `LICENSES/deepseek-MIT.txt`, without its copyright line |
 | `zai-org/GLM-5.3` | GLM-5.3 License, Copyright (c) 2026 Z.AI | `LICENSES/glm-5.3.txt` |
+| `MiniMaxAI/MiniMax-M2.1` (reference; M2, M2.5 and M2.7 renders are checked identical but not copied) | Modified MIT, as declared in the model card (`license_name: modified-mit`); the Hugging Face repository ships no LICENSE file, so no text is bundled (the fixtures contain only format syntax and text written for this repository) | none |
 | `moonshotai/Kimi-K2-Instruct-0905` | Modified MIT License, Copyright (c) 2025 Moonshot AI | `LICENSES/kimi-k2-modified-MIT.txt` |
 | `moonshotai/Kimi-K2.6` | Modified MIT License, Copyright (c) 2026 Moonshot AI | `LICENSES/kimi-k2.6-modified-MIT.txt` |
 | `moonshotai/Kimi-K3` | Kimi K3 License, Copyright (c) 2026 Moonshot AI | `LICENSES/kimi-k3.txt` |

@@ -30,7 +30,7 @@ Sizes: **S** is an hour or two, **M** is a day, **L** is several days or needs a
 
 | Item | Size | What done looks like |
 |---|---|---|
-| New family: MiniMax M2.x / M3 ([#4](https://github.com/redd34/canitoolcall/issues/4)) | M | Format notes with sources, a generator script, fixtures with provenance, one PR. |
+| New family: MiniMax M3 ([#4](https://github.com/redd34/canitoolcall/issues/4)) | M | M2.x landed as `minimax`. Left: M3's `]<]minimax[>[<tool_call>` format as its own family (or an extension), with the same deliverables, and replaying `minimax` on llama.cpp and Ollama. |
 | New family: NVIDIA Nemotron 3 / 3.5 ([#5](https://github.com/redd34/canitoolcall/issues/5)) | M | Same. |
 | llama.cpp: Llama 4 fixtures with an authoritative chat template ([#6](https://github.com/redd34/canitoolcall/issues/6)) | M | The Llama 4 fixtures run as supported on llama.cpp. |
 | Ollama: the legacy template tools parser ([#8](https://github.com/redd34/canitoolcall/issues/8)) | L | The 208 fixtures that are `unsupported` on Ollama today are replayed through the template parser. |

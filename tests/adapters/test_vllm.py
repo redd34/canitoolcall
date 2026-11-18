@@ -46,7 +46,18 @@ from canitoolcall.fixtures import (
     repo_root,
 )
 
-FAMILY_SLUGS = ("qwen3-hermes", "qwen3-xml", "gpt-oss", "deepseek", "kimi", "glm", "llama", "mistral", "gemma4")
+FAMILY_SLUGS = (
+    "qwen3-hermes",
+    "qwen3-xml",
+    "gpt-oss",
+    "deepseek",
+    "kimi",
+    "glm",
+    "minimax",
+    "llama",
+    "mistral",
+    "gemma4",
+)
 
 # --------------------------------------------------------------------------- fast (no engine)
 
@@ -74,6 +85,8 @@ FAMILY_SLUGS = ("qwen3-hermes", "qwen3-xml", "gpt-oss", "deepseek", "kimi", "glm
         ("glm", "zai-org/GLM-4.6", "glm45", "glm45"),
         ("glm", "zai-org/GLM-4.7", "glm47", "glm47"),
         ("glm", "zai-org/GLM-5.3", "glm47", "glm47"),
+        ("minimax", "MiniMaxAI/MiniMax-M2.7", "minimax_m2", "minimax_m2"),
+        ("minimax", "MiniMaxAI/MiniMax-M2", "minimax_m2", "minimax_m2"),
         ("llama", "meta-llama/Llama-3.1-8B-Instruct", "llama3_json", None),
         ("llama", "meta-llama/Llama-4-Scout-17B-16E-Instruct", "llama4_pythonic", None),
         ("mistral", "mistralai/Mistral-Small-3.2-24B-Instruct-2506", "mistral", None),
@@ -103,6 +116,8 @@ def test_parser_map_covers_known_families_only() -> None:
         ("no-such-family", "Qwen/Qwen3-0.6B"),
         ("llama", "meta-llama/Llama-2-7b-chat-hf"),
         ("gemma4", "google/gemma-3-27b-it"),
+        ("minimax", "MiniMaxAI/MiniMax-M3"),
+        ("minimax", "MiniMaxAI/MiniMax-M20"),
     ],
 )
 def test_unsupported_is_honest(family: str, model: str) -> None:
