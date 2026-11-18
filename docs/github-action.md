@@ -22,10 +22,12 @@ It covers the live probe only. Replaying the offline fixture suite through an en
 | `args` | `""` | extra `probe` arguments, split on whitespace with no shell quoting, e.g. `--no-stream --timeout 120` |
 | `version` | the current release (`0.2.0`) | canitoolcall release installed from PyPI |
 | `package` | `""` | install this instead of `canitoolcall==<version>` (passed to `uvx --from`), e.g. a checkout path or a git URL |
-| `json-report` | `canitoolcall-probe.json` | where the JSON report is written |
+| `json-report` | `canitoolcall-probe.json` | where the JSON report is written. A file already at that path is removed before the probe runs, so a run that writes no report (unreachable endpoint, usage error) shows "no report" rather than an old one. Give each probe step in a job its own path. |
 | `artifact-name` | `canitoolcall-probe` | name of the uploaded report artifact; empty skips the upload. Give each probe step in a run its own name. |
 
-Outputs: `exit-code` (the probe's exit code) and `report` (the report's path).
+With several probe steps in one job, set both `json-report` and `artifact-name` per step, for example `json-report: probe-qwen3.json` and `artifact-name: probe-qwen3`; otherwise each step overwrites the previous report and the uploads clash.
+
+Outputs: `exit-code` (the probe's exit code) and `report` (the report's path). The job summary's heading shows the counts and the exit code, e.g. `CanIToolCall probe: 26 pass, 1 fail, 0 error, 0 skip (exit code 1)`. Text from the report is escaped, and links in it are broken with a zero-width space so they are not clickable.
 
 ## Keys
 
@@ -81,7 +83,7 @@ The same shape works for any server you can start in the job, such as `vllm serv
 
 ## The self-test
 
-[`.github/workflows/action-selftest.yml`](../.github/workflows/action-selftest.yml) runs the action from this checkout (`uses: ./`) against the probe tests' mock OpenAI-compatible server, started on its own with [`scripts/probe_mock_server.py`](../scripts/probe_mock_server.py). The mock serves hand-written canned answers, not a model. The workflow checks that a conforming mock passes with the released version and with the checkout, that the key named by `api-key-env` reaches the server, that a mock that streams a tool-call delta without `index` fails with exit code `1`, and that an invalid `api-key-env` fails with exit code `2`.
+[`.github/workflows/action-selftest.yml`](../.github/workflows/action-selftest.yml) runs the action from this checkout (`uses: ./`) against the probe tests' mock OpenAI-compatible server, started on its own with [`scripts/probe_mock_server.py`](../scripts/probe_mock_server.py). The mock serves hand-written canned answers, not a model. The workflow checks that a conforming mock passes with the checkout (and, on pushes to `main` and manual runs, with the released version; pull requests skip that step because they may change the mock the release is tested against), that the key named by `api-key-env` reaches the server, that a mock that streams a tool-call delta without `index` fails with exit code `1`, that an invalid `api-key-env` fails with exit code `2`, and that an unreachable endpoint fails with exit code `2` and removes an old report left at its `json-report` path. `tests/probe/test_github_action.py` also runs the action's shell steps locally with `bash` and checks the summary they write.
 
 To try the mock yourself:
 

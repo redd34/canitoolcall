@@ -61,8 +61,11 @@ jobs:
             grep -q listening "$RUNNER_TEMP/$log.log"
           done
 
+      # The released probe against the mock from this checkout: a pull request that changes the mock
+      # could fail here through no fault of its own, so this step runs on main and on demand only.
       - name: passing server, default (released) version
         id: released
+        if: github.event_name != 'pull_request'
         uses: ./
         env:
           SELFTEST_KEY: selftest-not-a-secret
@@ -108,23 +111,47 @@ jobs:
           api-key-env: not a variable name
           artifact-name: ""
 
+      - name: leave a passing report where the next step writes its own
+        run: cp selftest-checkout.json selftest-stale.json
+
+      - name: unreachable endpoint over an old report (expected to fail)
+        id: unreachable
+        continue-on-error: true
+        uses: ./
+        with:
+          base-url: http://127.0.0.1:8013/v1
+          model: mock-model
+          package: ${{ github.workspace }}
+          json-report: selftest-stale.json
+          artifact-name: ""
+
       - name: check outcomes and exit codes
         env:
+          EVENT: ${{ github.event_name }}
           RELEASED_RC: ${{ steps.released.outputs.exit-code }}
           CHECKOUT_RC: ${{ steps.checkout.outputs.exit-code }}
           BROKEN_OUTCOME: ${{ steps.broken.outcome }}
           BROKEN_RC: ${{ steps.broken.outputs.exit-code }}
           BADNAME_OUTCOME: ${{ steps.badname.outcome }}
           BADNAME_RC: ${{ steps.badname.outputs.exit-code }}
+          UNREACHABLE_OUTCOME: ${{ steps.unreachable.outcome }}
+          UNREACHABLE_RC: ${{ steps.unreachable.outputs.exit-code }}
         run: |
           set -x
-          test "$RELEASED_RC" = 0
+          if [[ "$EVENT" != pull_request ]]; then
+            test "$RELEASED_RC" = 0
+            jq -e '.summary.fail == 0 and .summary.error == 0' selftest-released.json
+          fi
           test "$CHECKOUT_RC" = 0
           test "$BROKEN_OUTCOME" = failure
           test "$BROKEN_RC" = 1
           test "$BADNAME_OUTCOME" = failure
           test "$BADNAME_RC" = 2
-          jq -e '.summary.fail == 0 and .summary.error == 0' selftest-released.json
+          test "$UNREACHABLE_OUTCOME" = failure
+          test "$UNREACHABLE_RC" = 2
+          # The old report is gone, so it was neither summarised nor uploaded as this step's result
+          # (tests/probe/test_github_action.py checks that the summary then says "no report").
+          test ! -e selftest-stale.json
           jq -e '.summary.fail == 0 and .summary.error == 0' selftest-checkout.json
           jq -e '.summary.fail == 1 and .summary.error == 0' selftest-broken.json
           jq -e 'any(.outcomes[]; .scenario_id == "parallel-calls" and .stream and .check == "scenario" and .status == "fail")' \

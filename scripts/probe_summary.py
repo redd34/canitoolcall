@@ -26,12 +26,14 @@ EQUIVALENCE_CHECK = "stream_equals_nonstream"
 MAX_DETAIL = 300
 
 _MD_PUNCT = re.compile(r"([\\`*_\[\]|#~])")
+# GFM turns bare URLs, www. hosts and e-mail addresses into links even in escaped text.
+_AUTOLINK = re.compile(r"(?<=[A-Za-z])(?=://)|(?<=\bwww)(?=\.)|(?<=@)", re.IGNORECASE)
 
 
 def escape(text: object) -> str:
-    """One line of literal text: HTML entities, Markdown punctuation and newlines neutralised."""
+    """One line of literal text: HTML entities, Markdown punctuation, autolinks and newlines neutralised."""
     flat = " ".join(str(text).split())
-    return _MD_PUNCT.sub(r"\\\1", html.escape(flat, quote=False))
+    return _AUTOLINK.sub("\u200b", _MD_PUNCT.sub(r"\\\1", html.escape(flat, quote=False)))
 
 
 def _column(o: dict[str, Any]) -> str:
@@ -55,10 +57,12 @@ def _detail(text: object) -> str:
     return escape(s if len(s) <= MAX_DETAIL else s[:MAX_DETAIL] + "…")
 
 
-def render(report: dict[str, Any]) -> str:
+def render(report: dict[str, Any], exit_code: str | None = None) -> str:
     outcomes: list[dict[str, Any]] = list(report.get("outcomes") or [])
     counts = report.get("summary") or {}
     head = ", ".join(f"{int(counts.get(k, 0))} {k}" for k in STATUSES)
+    if exit_code is not None:
+        head += f" (exit code {escape(exit_code)})"
     out = [
         f"### CanIToolCall probe: {head}",
         "",
@@ -88,18 +92,18 @@ def render(report: dict[str, Any]) -> str:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("report", type=Path, help="JSON report written by `canitoolcall probe --json`")
-    p.add_argument("--exit-code", default="?", help="the probe's exit code, quoted when there is no report")
+    p.add_argument("--exit-code", help="the probe's exit code, shown in the header")
     args = p.parse_args(argv)
     try:
         report = json.loads(args.report.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         sys.stdout.write(
             "### CanIToolCall probe: no report\n\n"
-            f"`canitoolcall probe` exited with code {escape(args.exit_code)} and wrote no readable report "
+            f"`canitoolcall probe` exited with code {escape(args.exit_code or '?')} and wrote no readable report "
             "(an unreachable endpoint or a usage error). See the step log.\n"
         )
         return 0
-    sys.stdout.write(render(report))
+    sys.stdout.write(render(report, args.exit_code))
     return 0
 
 

@@ -38,7 +38,9 @@ inputs:
     required: false
     default: ""
   json-report:
-    description: Path of the JSON report to write (relative to the working directory).
+    description: >-
+      Path of the JSON report to write (relative to the working directory). An existing file there is removed first.
+      Give each probe step in a job its own path.
     required: false
     default: canitoolcall-probe.json
   artifact-name:
@@ -73,6 +75,8 @@ runs:
         CTC_PACKAGE: ${{ inputs.package }}
         CTC_REPORT: ${{ inputs.json-report }}
       run: |
+        # A report from an earlier step or run must not stand in for this one if the probe writes none.
+        rm -f "$CTC_REPORT"
         echo "report=$CTC_REPORT" >> "$GITHUB_OUTPUT"
         cmd=(probe --base-url "$CTC_BASE_URL" --model "$CTC_MODEL" --json "$CTC_REPORT")
         if [[ -n "$CTC_KEY_ENV" ]]; then
@@ -103,7 +107,8 @@ runs:
         CTC_RC: ${{ steps.probe.outputs.exit-code }}
       run: |
         if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
-          uv run --no-project --python ">=3.10" "$GITHUB_ACTION_PATH/scripts/probe_summary.py" \
+          # UV_LOCKED / UV_FROZEN only warn alongside --no-project.
+          env -u UV_LOCKED -u UV_FROZEN uv run --no-project --python ">=3.10" "$GITHUB_ACTION_PATH/scripts/probe_summary.py" \
             "$CTC_REPORT" --exit-code "$CTC_RC" >> "$GITHUB_STEP_SUMMARY"
         fi
 

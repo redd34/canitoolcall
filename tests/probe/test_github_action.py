@@ -9,8 +9,11 @@ import importlib.util
 import json
 import os
 import re
+import shutil
+import socket
 import subprocess
 import sys
+import textwrap
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -71,7 +74,7 @@ SMALL_REPORT = {
 SMALL_MARKDOWN = """\
 ### CanIToolCall probe: 4 pass, 1 fail, 0 error, 0 skip
 
-Model mock-model at http://127.0.0.1:8011/v1, canitoolcall 0.2.0.
+Model mock-model at http\u200b://127.0.0.1:8011/v1, canitoolcall 0.2.0.
 
 | scenario | non-stream | stream | stream=non-stream |
 |---|---|---|---|
@@ -120,6 +123,18 @@ def test_render_escapes_server_controlled_text() -> None:
     assert "<b>" not in md
 
 
+def test_render_defangs_bare_urls() -> None:
+    # GFM autolinks bare URLs, www. hosts and e-mail addresses even in escaped text; a zero-width
+    # space keeps a server-supplied link from becoming clickable in the summary.
+    text = "see https://evil.example/x, www.evil.example or me@evil.example"
+    assert summary.escape(text) == "see https\u200b://evil.example/x, www\u200b.evil.example or me@\u200bevil.example"
+
+
+def test_render_header_shows_the_exit_code() -> None:
+    head = summary.render(SMALL_REPORT, exit_code="1").splitlines()[0]
+    assert head == "### CanIToolCall probe: 4 pass, 1 fail, 0 error, 0 skip (exit code 1)"
+
+
 def test_render_truncates_long_details() -> None:
     report = {**SMALL_REPORT, "outcomes": [_outcome("single-call", "nonstream", "fail", "x" * 5000)]}
     line = next(ln for ln in summary.render(report).splitlines() if ln.startswith("- single-call"))
@@ -130,7 +145,7 @@ def test_main_writes_markdown_for_a_report(tmp_path: Path, capsys: pytest.Captur
     path = tmp_path / "r.json"
     path.write_text(json.dumps(SMALL_REPORT), encoding="utf-8")
     assert summary.main([str(path), "--exit-code", "1"]) == 0
-    assert capsys.readouterr().out == SMALL_MARKDOWN
+    assert capsys.readouterr().out == SMALL_MARKDOWN.replace(" 0 skip\n", " 0 skip (exit code 1)\n", 1)
 
 
 def test_main_without_a_report_says_why(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -226,3 +241,104 @@ def test_action_run_blocks_never_interpolate_expressions() -> None:
     assert blocks
     for _, body in blocks:
         assert "${{" not in body, body
+
+
+# --------------------------------------------------------------------------- action.yml run blocks
+#
+# The probe and summary steps run here as the runner runs them (`bash --noprofile --norc -eo pipefail`),
+# with stand-ins for `uvx` and `uv` that run this checkout's canitoolcall and summary script.
+
+
+def _run_blocks() -> dict[str, str]:
+    blocks = [textwrap.dedent(b) for _, b in re.findall(r"\n( +)run: \|\n((?:\1  .*\n|\n)+)", _action())]
+    probe = [b for b in blocks if "uvx " in b]
+    summ = [b for b in blocks if "probe_summary.py" in b]
+    assert len(probe) == len(summ) == 1
+    return {"probe": probe[0], "summary": summ[0]}
+
+
+def _closed_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return int(s.getsockname()[1])
+
+
+def _run_action(tmp_path: Path, base_url: str, *, api_key_env: str = "", stale: bool = True) -> dict[str, Any]:
+    """Run the probe and summary steps in ``tmp_path``; return their outputs and the summary."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    # uvx --from SPEC canitoolcall ARGS...  ->  python -m canitoolcall ARGS...
+    (bin_dir / "uvx").write_text(f'#!/bin/sh\nshift 3\nexec "{sys.executable}" -m canitoolcall "$@"\n')
+    # uv run --no-project --python SPEC SCRIPT ARGS...  ->  python SCRIPT ARGS...
+    (bin_dir / "uv").write_text(f'#!/bin/sh\nshift 4\nexec "{sys.executable}" "$@"\n')
+    for f in bin_dir.iterdir():
+        f.chmod(0o755)
+    work = tmp_path / "work"
+    work.mkdir()
+    report = work / "canitoolcall-probe.json"
+    if stale:  # left by an earlier step or run that passed
+        report.write_text(json.dumps({**SMALL_REPORT, "summary": {"pass": 27}, "outcomes": []}), encoding="utf-8")
+    output, step_summary = tmp_path / "output", tmp_path / "summary.md"
+    env = {
+        "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+        "GITHUB_OUTPUT": str(output),
+        "GITHUB_STEP_SUMMARY": str(step_summary),
+        "GITHUB_ACTION_PATH": str(ROOT),
+        "CTC_BASE_URL": base_url,
+        "CTC_MODEL": "mock-model",
+        "CTC_KEY_ENV": api_key_env,
+        "CTC_ARGS": "",
+        "CTC_VERSION": __version__,
+        "CTC_PACKAGE": "",
+        "CTC_REPORT": report.name,
+    }
+    blocks = _run_blocks()
+
+    def step(body: str, extra: dict[str, str]) -> subprocess.CompletedProcess[str]:
+        cmd = ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", body]
+        return subprocess.run(cmd, cwd=work, env={**env, **extra}, capture_output=True, text=True, timeout=120)
+
+    probe = step(blocks["probe"], {})
+    assert probe.returncode == 0, probe.stderr  # the step itself passes; a later step fails the job
+    outputs = dict(ln.split("=", 1) for ln in output.read_text().splitlines())
+    summ = step(blocks["summary"], {"CTC_REPORT": outputs["report"], "CTC_RC": outputs["exit-code"]})
+    assert summ.returncode == 0, summ.stderr
+    return {
+        "outputs": outputs,
+        "log": probe.stdout + probe.stderr,
+        "summary": step_summary.read_text(encoding="utf-8"),
+        "report": report,
+    }
+
+
+needs_bash = pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash")
+
+
+@needs_bash
+def test_action_steps_pass_on_a_conforming_server(mock_openai: Any, tmp_path: Path) -> None:
+    r = _run_action(tmp_path, mock_openai.base_url)
+    assert r["outputs"]["exit-code"] == "0"
+    assert json.loads(r["report"].read_text(encoding="utf-8"))["base_url"] == mock_openai.base_url
+    head = r["summary"].splitlines()[0]
+    assert re.fullmatch(r"### CanIToolCall probe: \d+ pass, 0 fail, 0 error, 0 skip \(exit code 0\)", head), head
+
+
+@needs_bash
+def test_action_steps_do_not_show_a_stale_report_when_unreachable(tmp_path: Path) -> None:
+    r = _run_action(tmp_path, f"http://127.0.0.1:{_closed_port()}/v1")
+    assert r["outputs"]["exit-code"] == "2"
+    assert "cannot reach" in r["log"]
+    assert not r["report"].exists()
+    assert r["summary"].startswith("### CanIToolCall probe: no report\n")
+    assert "exited with code 2" in r["summary"]
+
+
+@needs_bash
+def test_action_steps_do_not_show_a_stale_report_for_a_bad_key_name(tmp_path: Path) -> None:
+    pasted = "sk-pasted-not-a-real-key"
+    r = _run_action(tmp_path, "http://127.0.0.1:1/v1", api_key_env=pasted)
+    assert r["outputs"]["exit-code"] == "2"
+    assert "api-key-env must be the NAME" in r["log"]
+    assert pasted not in r["log"] and pasted not in r["summary"]
+    assert not r["report"].exists()
+    assert r["summary"].startswith("### CanIToolCall probe: no report\n")
