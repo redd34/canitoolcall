@@ -28,7 +28,7 @@ The same model can call tools correctly on one server and break on another. The 
 
 ```mermaid
 flowchart LR
-    M["Model<br/>writes raw text with<br/>format markers"] --> P["Inference engine's<br/>tool-call parser<br/>(vLLM, SGLang, llama.cpp,<br/>Ollama, transformers)"]
+    M["Model<br/>writes raw text with<br/>format markers"] --> P["Inference engine's<br/>tool-call parser<br/>(vLLM, SGLang, llama.cpp,<br/>Ollama, transformers, mlx-lm)"]
     P --> R["OpenAI-style response<br/>tool_calls · content ·<br/>reasoning_content"]
     R --> A["Your app or agent"]
     C(["CanIToolCall"]) -. "tests this step,<br/>offline" .-> P
@@ -80,7 +80,7 @@ flowchart TB
     F["Fixture (500 total, each with provenance)<br/>raw output · token ids · tools · expected parse"]
     F --> N["Parse once,<br/>non-streaming"]
     F --> K["Stream it, split 8 ways<br/>one · special · token · 5 seeded random"]
-    N --> P["Each engine's own parser code<br/>vLLM · SGLang · llama.cpp · Ollama · transformers<br/>pinned versions · offline · no GPU · no weights"]
+    N --> P["Each engine's own parser code<br/>vLLM · SGLang · llama.cpp · Ollama · transformers · mlx-lm<br/>pinned versions · offline · no GPU · no weights"]
     K --> P
     P --> CH["8 checks<br/>expected match · graceful errors · stream = non-stream<br/>split invariance · no marker leakage<br/>valid JSON · schema · call order"]
     CH --> RS["Results JSON per engine"]
@@ -130,9 +130,24 @@ problems:
   parallel-calls [stream] fail: tool-call delta without an integer 'index' (clients cannot merge deltas)
 ```
 
+**Responses API.** Agent CLIs such as Codex CLI talk to local servers over the OpenAI Responses API (`/v1/responses`), not `/chat/completions`. Add `--api responses` to send the same scenarios there, with tools as `{type: "function", name, parameters}`, earlier calls and results as `function_call` / `function_call_output` items, and the stream read from `response.*` events. `--api both` runs both APIs and adds an `api` column to the table. The default is `--api chat`. The checks are the same, plus Responses stream consistency: the stream must end with `response.completed`, and `response.function_call_arguments.done` and `response.output_item.done` must agree with the deltas. The shapes and their sources are in [`docs/probe-responses-api.md`](docs/probe-responses-api.md). The MCP server's `probe` tool still sends `/chat/completions` only.
+
+```sh
+canitoolcall probe --base-url http://localhost:8000/v1 --model M --api both
+```
+
 **How it judges.** The model's exact output is unknown, so the checks are structural: a call to the right tool with arguments that match its schema, no format marker (`<tool_call>`, `<|call|>`, `[TOOL_CALLS]`, …) in `content`, tool names or arguments, and the same shape with and without streaming. Inside `reasoning_content`, reasoning delimiters such as `<think>` or Harmony's `<|channel|>` still fail, because a correct reasoning parser always strips them. Tool-call markers such as `<tool_call>` there are only a warning, because models often draft their call while thinking. A result with warnings is shown as `pass*` and the warnings are listed under the table. Warnings do not change the exit code.
 
 **Keys and safety.** No API key is sent unless you set one: the key is read from `$CANITOOLCALL_API_KEY`, or from the variable you name with `--api-key-env` (pass `--api-key-env OPENAI_API_KEY` to use that one; it is never read by default, so an exported OpenAI key cannot leak to a third-party endpoint). The key is only sent in the `Authorization` header, only to `--base-url` (redirects are not followed), and is never logged. The probe refuses to send a key over plain `http://` to a host other than localhost unless you pass `--allow-insecure`. Add `--json report.json` to keep a machine-readable report. The exit code is `0` when everything passes, `1` on failures and `2` on usage errors or an unreachable endpoint.
+
+**In GitHub Actions.** The repository is also a composite action that runs `probe` in CI, writes a results table to the job summary, uploads the JSON report as an artifact, and fails the job when a scenario fails. [`docs/github-action.md`](docs/github-action.md) lists the inputs and has a workflow that starts a server in the job:
+
+```yaml
+      - uses: redd34/canitoolcall@v0   # see docs/github-action.md for tags and SHA pinning
+        with:
+          base-url: http://localhost:11434/v1
+          model: qwen3:0.6b
+```
 
 ### Replay the offline suite
 
@@ -170,7 +185,7 @@ Every fixture is parsed once without streaming and once for each **chunking stra
 - `token`: one token per delta
 - `rand:1:8` … `rand:5:8`: five seeded random groupings
 
-Each strategy is seeded, so it produces the same deltas on every machine. Multi-token strategies only count for engines whose servers can put several tokens in one delta (vLLM, SGLang). llama-server, Ollama and transformers `serve` stream one token per event, so for them only `token` counts; the others still run and are reported as synthetic.
+Each strategy is seeded, so it produces the same deltas on every machine. Multi-token strategies only count for engines whose servers can put several tokens in one delta (vLLM, SGLang). llama-server, Ollama, transformers `serve` and `mlx_lm.server` stream one token per event, so for them only `token` counts; the others still run and are reported as synthetic.
 
 A correct parser gives the same answer however the stream is split, and the same answer as without streaming:
 
@@ -201,16 +216,17 @@ A case gets the worst status over its checks: `fail` > `error` > `soft pass` > `
 
 ### Families and engines
 
-- **Model families:** `qwen3-hermes`, `qwen3-xml`, `gpt-oss`, `deepseek`, `kimi`, `glm`, `llama`, `mistral` and `gemma4`. Each has format notes with their sources in [`docs/formats/`](docs/formats/README.md).
+- **Model families:** `qwen3-hermes`, `qwen3-xml`, `gpt-oss`, `deepseek`, `kimi`, `glm`, `minimax`, `llama`, `mistral`, `gemma4` and `seed-oss`. Each has format notes with their sources in [`docs/formats/`](docs/formats/README.md).
 - **Engines (pinned):**
 
   | Engine | Version |
   |---|---|
-  | vLLM | 0.30.0 |
+  | vLLM | 0.34.0 |
   | SGLang | 0.5.20 |
   | llama.cpp | `a25c9865` |
   | HF transformers | 5.17.0 |
   | Ollama | `7af39318` (built-in parsers) |
+  | mlx-lm | 0.32.2 (needs mlx: macOS arm64, or Linux through the `mlx-cpu` wheels; not in the committed snapshot yet) |
 
 - **How adapters run the parsers:**
   - Python engines: the adapter imports the engine's parser classes and calls them the way the engine's own server does.
@@ -269,6 +285,15 @@ Use `--canitoolcall-fixtures PATH` to test against your own copy of the corpus.
 **What is a soft pass?** A result that differs from the expected one only in whitespace, such as a leading newline in the reasoning. It is also given when, for malformed or truncated output, streaming and non-streaming return the same calls but recover different text. The matrix shows soft passes separately from passes.
 
 **Does family or model X parse on engine Y?** Ask without a checkout: `canitoolcall lookup qwen3-hermes --engine vllm` (or a model name such as `Qwen/Qwen3.5-9B`, and `--json` for scripts). It reads the published [`matrix.json`](https://redd34.github.io/canitoolcall/matrix.json) (this works once the site has been rebuilt by a release that includes `lookup`; until then the published file has no `schema_version` and `lookup` says so, and `--matrix PATH_OR_URL` reads a newer one). The exit code is 0 whenever the lookup works, even if the status is `fail`; scripts should read `status` from `--json`. Queries of fewer than 3 characters only match exactly. The format is documented in [`spec/README.md`](spec/README.md#matrixjson).
+
+**Can I put a status badge in my README or model card?** Yes. Cell pages of the newest version of each engine have a "Badges" section with a Markdown snippet. They are [shields.io endpoint badges](https://shields.io/badges/endpoint-badge) backed by JSON the site publishes from the same data as `matrix.json`: `badges/<engine>/<family>.json` (for example `fail · 23/54 strict pass`, `soft pass · 2/3 strict pass` or `unsupported`; the count is strict passes over supported cases, not a failure rate) and `badges/<engine>.json` (for example `7/9 families pass`). Working example for the published site:
+
+```md
+![qwen3-hermes on vllm](https://img.shields.io/endpoint?url=https%3A%2F%2Fredd34.github.io%2Fcanitoolcall%2Fbadges%2Fvllm%2Fqwen3-hermes.json)
+![vllm](https://img.shields.io/endpoint?url=https%3A%2F%2Fredd34.github.io%2Fcanitoolcall%2Fbadges%2Fvllm.json)
+```
+
+If you host a fork, replace `https%3A%2F%2Fredd34.github.io%2Fcanitoolcall` with your site URL, percent-encoded (`:` as `%3A`, `/` as `%2F`). The snippets on cell pages use the URL the site was built with (`canitoolcall matrix --site-url URL`), or the published site's URL without it.
 
 **Can my agent ask this over MCP?** Yes. `pip install 'canitoolcall[mcp]'` adds `canitoolcall mcp`, a stdio [MCP](https://modelcontextprotocol.io) server with four tools: `lookup` (same answer as `canitoolcall lookup --json`), `list_families`, `list_engines` and `probe`. Claude Code: `claude mcp add canitoolcall -- uvx --from 'canitoolcall[mcp]' canitoolcall mcp`. Other clients (generic `mcpServers` JSON):
 

@@ -672,6 +672,100 @@ def test_render_site_publishes_matrix_schema(tmp_path: Path, sample_fixtures_dir
     assert published["$id"] == "https://redd34.github.io/canitoolcall/spec/matrix.schema.json"
 
 
+# --------------------------------------------------------------------------- badges
+
+
+def _read_json(path: Path) -> dict[str, object]:
+    data: dict[str, object] = json.loads(path.read_text(encoding="utf-8"))
+    return data
+
+
+def test_badges_written_for_newest_versions(tmp_path: Path) -> None:
+    older = _run("vllm", "0.9.0", cases=(CaseResult("a/1", "qwen3-hermes", Status.PASS, _passing_checks()),))
+    results = _write(tmp_path, [*_sample_runs(), older])
+    out = tmp_path / "site"
+    render_site(results, out, fixtures_dir=tmp_path / "none")
+
+    assert _read_json(out / "badges" / "vllm" / "qwen3-hermes.json") == {
+        "schemaVersion": 1,
+        "label": "qwen3-hermes on vllm",
+        "message": "fail · 1/3 strict pass",
+        "color": "red",
+    }
+    matrix = _read_json(out / "matrix.json")
+    cells: list[dict[str, object]] = matrix["cells"]  # type: ignore[assignment]
+    row = next(
+        c for c in cells if c["engine"] == "vllm" and c["engine_version"] == "0.30.0" and c["family"] == "qwen3-hermes"
+    )
+    assert row["pass_rate"] == pytest.approx(1 / 3)  # same data as matrix.json
+
+    unsupported = _read_json(out / "badges" / "vllm" / "deepseek.json")
+    assert unsupported["message"] == "unsupported"
+    assert unsupported["color"] == "lightgrey"
+
+    assert _read_json(out / "badges" / "vllm.json") == {
+        "schemaVersion": 1,
+        "label": "vllm",
+        "message": "0/1 families pass",
+        "color": "red",
+    }
+    sg = _read_json(out / "badges" / "sglang.json")
+    assert (sg["message"], sg["color"]) == ("0/1 families pass", "orange")  # an error cell
+    assert _read_json(out / "badges" / "sglang" / "qwen3-hermes.json")["message"] == "error · 1/2 strict pass"
+
+    # Stale badge files from an earlier build are removed.
+    stale = out / "badges" / "gone.json"
+    stale.write_text("{}", encoding="utf-8")
+    render_site(results, out, fixtures_dir=tmp_path / "none")
+    assert not stale.exists()
+
+    # Only the newest version of each engine gets badges, and cell pages show them only there.
+    assert sorted(p.name for p in (out / "badges").glob("*.json")) == ["sglang.json", "vllm.json"]
+    new_page = (out / "cells" / "vllm" / "0.30.0" / "qwen3-hermes.html").read_text(encoding="utf-8")
+    old_page = (out / "cells" / "vllm" / "0.9.0" / "qwen3-hermes.html").read_text(encoding="utf-8")
+    assert "https%3A%2F%2Fredd34.github.io%2Fcanitoolcall%2Fbadges%2Fvllm%2Fqwen3-hermes.json" in new_page
+    assert "Badges" in new_page
+    assert "Badges" not in old_page
+
+
+def test_badges_pick_newest_version_by_run_at(tmp_path: Path) -> None:
+    from canitoolcall.badges import newest_versions
+
+    cases = (CaseResult("a/1", "qwen3-hermes", Status.PASS, _passing_checks()),)
+    older = _run("llamacpp", "ffff123", finished="2026-01-01T00:00:00Z", cases=cases)
+    newer = _run("llamacpp", "0abc999", finished="2026-02-01T00:00:00Z", cases=cases)
+    assert newest_versions(build_matrix([older, newer])) == {"llamacpp": "0abc999"}
+    out = tmp_path / "site"
+    render_site(_write(tmp_path, [older, newer]), out, fixtures_dir=tmp_path / "none")
+    assert "Badges" in (out / cell_path("llamacpp", "0abc999", "qwen3-hermes")).read_text(encoding="utf-8")
+    assert "Badges" not in (out / cell_path("llamacpp", "ffff123", "qwen3-hermes")).read_text(encoding="utf-8")
+
+
+def test_badge_messages_and_colors() -> None:
+    from canitoolcall.badges import badge_markdown, cell_badge, engine_badge
+    from canitoolcall.matrix import Cell
+
+    def mk(status: Status, passes: int, total: int) -> Cell:
+        counts = {s.value: 0 for s in Status}
+        counts["pass"] = passes
+        counts[Status.FAIL.value] = total - passes
+        return Cell("fam", "eng", "1", counts, status, "2026-01-01T00:00:00Z")
+
+    ok = cell_badge(mk(Status.PASS, 54, 54))
+    assert (ok["message"], ok["color"]) == ("pass · 54/54 strict pass", "brightgreen")
+    assert cell_badge(mk(Status.FAIL, 23, 54))["message"] == "fail · 23/54 strict pass"
+    soft = cell_badge(mk(Status.SOFT_PASS, 0, 3))
+    assert (soft["message"], soft["color"]) == ("soft pass · 0/3 strict pass", "yellowgreen")
+    err = cell_badge(mk(Status.ERROR, 1, 4))
+    assert (err["message"], err["color"]) == ("error · 1/4 strict pass", "orange")
+    none = Cell("fam", "eng", "1", {s.value: 0 for s in Status}, Status.UNSUPPORTED, "")
+    assert cell_badge(none)["message"] == "unsupported"
+    assert engine_badge("eng", [none])["message"] == "unsupported"
+    assert badge_markdown("badges/x.json", "x", "https://example.org/site").endswith(
+        "?url=https%3A%2F%2Fexample.org%2Fsite%2Fbadges%2Fx.json)"
+    )
+
+
 def test_lookup_failure_messages_are_sanitised() -> None:
     from canitoolcall.lookup import LookupFailure, lookup
 
@@ -877,6 +971,7 @@ def test_render_site_with_site_url(tmp_path: Path) -> None:
     assert "<loc>https://example.org/matrix/</loc>" in sitemap
     assert f"<loc>https://example.org/matrix/{rel}</loc>" in sitemap
     assert sitemap.count("<url>") == 1 + len(list((out / "cells").rglob("*.html")))
+    assert "https%3A%2F%2Fexample.org%2Fmatrix%2Fbadges%2Fvllm%2Fqwen3-hermes.json" in cell_html  # badge snippets
 
 
 @pytest.mark.parametrize(

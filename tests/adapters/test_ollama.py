@@ -107,6 +107,7 @@ def test_parser_selection(family: str, model: str, thinking: bool | None, parser
         ("mistral", "mistralai/Mistral-Small-3.2-24B-Instruct-2506"),
         ("mistral", "mistralai/Devstral-Small-2-24B-Instruct-2512"),
         ("qwen3-xml", "Qwen/Qwen3-0.6B"),
+        ("seed-oss", "ByteDance-Seed/Seed-OSS-36B-Instruct"),
     ],
 )
 def test_unsupported_is_honest(family: str, model: str) -> None:

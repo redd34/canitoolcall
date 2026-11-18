@@ -18,20 +18,17 @@ Sizes: **S** is an hour or two, **M** is a day, **L** is several days or needs a
 
 | Item | Size | What done looks like |
 |---|---|---|
-| Triage the fixture left in `transformers-other` ([#23](https://github.com/redd34/canitoolcall/issues/23)) | S | Each fixture is in a finding with a one-line summary and a repro command; `triage.py` regenerates `triage.jsonl` byte for byte. |
-| Triage the 14 fixtures in `sglang-other` ([#24](https://github.com/redd34/canitoolcall/issues/24)) | M | Same as above. [#13](https://github.com/redd34/canitoolcall/pull/13) is a good model of the result. |
+| Triage the 14 fixtures in `sglang-other` ([#24](https://github.com/redd34/canitoolcall/issues/24)) | M | Each fixture is in a finding with a one-line summary and a repro command; `triage.py` regenerates `triage.jsonl` byte for byte. [#13](https://github.com/redd34/canitoolcall/pull/13) and [#23](https://github.com/redd34/canitoolcall/issues/23) are good models of the result. |
 | Docs: pointing `probe` at hosted OpenAI-compatible providers ([#26](https://github.com/redd34/canitoolcall/issues/26)) | S | A short doc page with tested commands and the key-safety notes. |
 | Verify vllm#58829 against the llama fixtures ([#16](https://github.com/redd34/canitoolcall/issues/16)) | S | The verifier output, base and head SHAs, OS, and the supported/unsupported split posted on the issue. |
 | Spec: how generation ended, and fixtures that assume an ignored stop token ([#9](https://github.com/redd34/canitoolcall/issues/9)) | M | The fields landed in [#38](https://github.com/redd34/canitoolcall/pull/38) (spec 0.2). Left: whatever #9 still lists after that first PR. |
-| One shared report validator (*no issue yet*) | S | The report checks added in [#31](https://github.com/redd34/canitoolcall/pull/31) live in one function that the compiled-engine verifier ([#33](https://github.com/redd34/canitoolcall/pull/33)) also uses, once that lands. |
 | Native Windows paths (*no issue yet*) | S | `.venvs/<engine>/bin/python` is hard-coded in `adapters/__init__.py` and `verify_upstream_pr.py`; use `Scripts\python.exe` on Windows. Needs a Windows run to confirm. |
-| Verify vllm#51577 (*no issue yet*) | S | The llama3 JSON parser rewrite that replaced the closed vllm#58826. It moves the parser to a new module, so the overlay may exit 3 on vLLM 0.30.0; report whichever happens. |
 
 ## Next: wider coverage
 
 | Item | Size | What done looks like |
 |---|---|---|
-| New family: MiniMax M2.x / M3 ([#4](https://github.com/redd34/canitoolcall/issues/4)) | M | Format notes with sources, a generator script, fixtures with provenance, one PR. |
+| New family: MiniMax M3 ([#4](https://github.com/redd34/canitoolcall/issues/4)) | M | M2.x landed as `minimax`. Left: M3's `]<]minimax[>[<tool_call>` format as its own family (or an extension), with the same deliverables, and replaying `minimax` on llama.cpp and Ollama. |
 | New family: NVIDIA Nemotron 3 / 3.5 ([#5](https://github.com/redd34/canitoolcall/issues/5)) | M | Same. |
 | llama.cpp: Llama 4 fixtures with an authoritative chat template ([#6](https://github.com/redd34/canitoolcall/issues/6)) | M | The Llama 4 fixtures run as supported on llama.cpp. |
 | Ollama: the legacy template tools parser ([#8](https://github.com/redd34/canitoolcall/issues/8)) | L | The 208 fixtures that are `unsupported` on Ollama today are replayed through the template parser. |

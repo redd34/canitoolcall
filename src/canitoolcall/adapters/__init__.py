@@ -1,7 +1,7 @@
 """Engine adapters and their registry.
 
 Each engine has exactly one module here (``vllm.py``, ``sglang.py``,
-``llamacpp.py``, ``ollama.py``, ``transformers.py``) defining one
+``llamacpp.py``, ``ollama.py``, ``transformers.py``, ``mlx_lm.py``) defining one
 :class:`~canitoolcall.adapters.base.Adapter` subclass. Adapter modules must NOT
 import their engine at module import time; import it inside methods so the
 registry can be listed from the main dev env.
@@ -27,6 +27,7 @@ ENGINES: dict[str, str] = {
     "llamacpp": "canitoolcall.adapters.llamacpp:LlamaCppAdapter",
     "ollama": "canitoolcall.adapters.ollama:OllamaAdapter",
     "transformers": "canitoolcall.adapters.transformers:TransformersAdapter",
+    "mlx_lm": "canitoolcall.adapters.mlx_lm:MlxLmAdapter",
 }
 """Engine name -> ``module:Class``. Core-owned; adapter builders never edit it."""
 

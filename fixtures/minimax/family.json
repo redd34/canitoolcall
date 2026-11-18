@@ -1,0 +1,35 @@
+{
+  "slug": "minimax",
+  "name": "MiniMax (M2, M2.1, M2.5, M2.7)",
+  "spec_version": "0.2",
+  "has_reasoning": true,
+  "markers": [
+    "<minimax:tool_call>",
+    "</minimax:tool_call>",
+    "<invoke name=\"",
+    "</invoke>",
+    "<parameter name=\"",
+    "</parameter>",
+    "<think>",
+    "</think>",
+    "<response>",
+    "</response>",
+    "]~!b[",
+    "]~b]",
+    "[e~["
+  ],
+  "reference_models": [
+    {
+      "repo": "MiniMaxAI/MiniMax-M2.1",
+      "revision": "917dbb7d0761e24d8623c0a5d97624550181c8e6",
+      "variant": "m2-xml",
+      "default_generation_prompt": "]~b]ai\n<think>\n",
+      "stop_tokens": [
+        "[e~["
+      ],
+      "tokenizer_mode": "hf"
+    }
+  ],
+  "format_notes": "docs/formats/minimax.md",
+  "notes": "XML-ish format: one <minimax:tool_call> section holding one <invoke name=\"...\"> per call, each with <parameter name=\"...\"> elements. String values are raw (no escaping); other values are JSON, so a parser needs the tool schema. The generation prompt always opens <think>, so the completion starts inside the reasoning. M2, M2.1, M2.5 and M2.7 render identical assistant turns (see models). MiniMax-M3 uses a different format and is not part of this family."
+}

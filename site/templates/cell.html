@@ -179,5 +179,16 @@ special tokens){% if cell.multi_token_synthetic %}, or a multi-token strategy th
 {% endif %}
 </section>
 
+{% if badges %}
+<section aria-labelledby="badges-h">
+<h2 id="badges-h">Badges</h2>
+<p>Embed this status in an engine README or model card (shields.io endpoint badges; newest engine version only).</p>
+<p>This cell:</p>
+<pre class="repro"><code>{{ badges.cell }}</code></pre>
+<p>All supported families on {{ cell.engine }}:</p>
+<pre class="repro"><code>{{ badges.engine }}</code></pre>
+</section>
+{% endif %}
+
 {{ legend() }}
 {% endblock %}

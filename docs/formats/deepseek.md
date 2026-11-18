@@ -162,7 +162,7 @@ The V3.2, V4 and V4.1 encoders also include `parse_message_from_completion_text`
 
 ## Engine parser mapping
 
-| Sub-format | vLLM v0.30.0 tool / reasoning | SGLang v0.5.20 tool / reasoning |
+| Sub-format | vLLM v0.34.0 tool / reasoning | SGLang v0.5.20 tool / reasoning |
 |---|---|---|
 | V3 / R1 | `deepseek_v3` / `deepseek_r1` | `deepseekv3` / `deepseek-r1` |
 | V3.1 | `deepseek_v31` / `deepseek_v3` | `deepseekv31` / `deepseek-v3` |

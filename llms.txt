@@ -1,12 +1,13 @@
 # CanIToolCall
 
-> A neutral conformance suite and public matrix for the tool-call and reasoning parsers of inference engines (vLLM, SGLang, llama.cpp, Ollama, HF transformers). It replays recorded model outputs through each engine's own parser code, offline, and checks every way of splitting the stream.
+> A neutral conformance suite and public matrix for the tool-call and reasoning parsers of inference engines (vLLM, SGLang, llama.cpp, Ollama, HF transformers, mlx-lm). It replays recorded model outputs through each engine's own parser code, offline, and checks every way of splitting the stream.
 
 Use it to answer "will this model's tool calls parse correctly on this engine?", to test a live OpenAI-compatible server, or to verify a parser fix.
 
 ## Quick use
 - Check a server: `uvx canitoolcall probe --base-url http://localhost:11434/v1 --model qwen3:8b`
 - Ask from an agent over MCP: `uvx --from 'canitoolcall[mcp]' canitoolcall mcp` (stdio; tools `lookup`, `list_families`, `list_engines`, `probe`; probe reaches loopback only and sends no API key unless the operator allows it with `--allow-base-url` / `--allow-api-key-env VAR=URL`; config in the README)
+- Check a server in GitHub Actions: `uses: redd34/canitoolcall@v0` ([docs](https://github.com/redd34/canitoolcall/blob/main/docs/github-action.md))
 - Matrix (every model family x engine): https://redd34.github.io/canitoolcall/
 - Verify an upstream parser fix PR: `uv run python scripts/verify_upstream_pr.py --engine sglang --pr <N> --family <slug>`
 
