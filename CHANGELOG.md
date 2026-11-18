@@ -14,6 +14,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- vLLM pin bumped from 0.30.0 to 0.34.0 (`scripts/engines/vllm.sh`, adapter, docs). The parser names for all nine families are unchanged; `llama3_json`/`llama4_json` now resolve to the parser-engine `LlamaJsonEngineToolParser` (vllm#63569). The adapter follows 0.34's serving path: `get_parser(tokenizer=...)`, `set_prompt_token_ids` before `adjust_request` and before the non-streaming `parse`, `always_adjust_request`, the `DeepseekV41Renderer`, and Kimi K3 thinking efforts. The vLLM env moves to `oss-harmony` (vllm#55128), transformers 5.22.0 and huggingface-hub 2.4.0 to meet 0.34's floors, and adds `einops`. The committed snapshot is unchanged; the nightly regenerates it.
 - Matrix site: every page has a meta description and preview tags, the index page title names what the site is, and the index says it is not a ranking (unsupported cells and policy fails).
 - README: the hero image is the 2026-11-15 matrix, and there are lines on who the project is for and what it does not cover yet.
 - The verifiers (`scripts/verify_upstream_pr.py`, `scripts/verify_compiled_pr.py`) now print the `unsupported` count on the `fixtures replayed` line, e.g. `fixtures replayed: 48 (N unsupported)`, and their JSON reports gain an `unsupported` field.

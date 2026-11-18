@@ -96,7 +96,7 @@ Note that K3 **re-used ids 163586–163588**. In K2 they were `<|im_end|>`, `<|i
 
 ## Engine parser mapping
 
-| Sub-format | vLLM v0.30.0 tool / reasoning | SGLang v0.5.20 tool / reasoning |
+| Sub-format | vLLM v0.34.0 tool / reasoning | SGLang v0.5.20 tool / reasoning |
 |---|---|---|
 | K2.x | `kimi_k2` (`KimiK2ToolParser` → `vllm/parser/kimi_k2.py`, `_TOOL_ID_RE = r"(?P<id>.+:\d+)"`) / `kimi_k2` | `kimi_k2` (`KimiK2Detector`) / `kimi_k2` (also `kimi` for the older Kimi-VL/1.5 `◁think▷` style) |
 | K3 | `kimi_k3` (`KimiK3ToolParser`) / `kimi_k3` | `kimi_k3` (`KimiK3Detector`, with structural-tag support in `kimik3_structural_tag.py`) / `kimi_k3` |

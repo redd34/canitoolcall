@@ -41,7 +41,7 @@ The HF API was queried by author on 2026-09-25, sorted by downloads and by creat
 
 | Engine | Version | Commit | Where parsers live |
 |---|---|---|---|
-| vLLM | v0.30.0 (2026-09-22) | `ced6857afa0ea7b2e3f0846a62e1394e90f15607` | Names in `vllm/tool_parsers/__init__.py` and `vllm/reasoning/__init__.py`. Most grammars are now in `vllm/parser/<family>.py`, which is the new "parser engine". The `*_tool_parser.py` classes are thin adapters over it. |
+| vLLM | v0.34.0 (2026-11-16) | `62d4bc3c7e33b1b6c906e233e6af2d3506c482ca` | Names in `vllm/tool_parsers/__init__.py` and `vllm/reasoning/__init__.py`. Most grammars are now in `vllm/parser/<family>.py`, which is the new "parser engine". The `*_tool_parser.py` classes are thin adapters over it. |
 | SGLang | v0.5.20 (2026-09-18) | `94602c9c2b7cbdb8efd5c52802dac6a1c180089e` | `python/sglang/srt/function_call/function_call_parser.py` (`ToolCallParserEnum`), `python/sglang/srt/parser/reasoning_parser.py` (`DetectorMap`) |
 | llama.cpp | v0.5.0 (2026-09-23) | tag `v0.5.0` | `common/chat.cpp`, `common/chat-auto-parser*.cpp`, `common/chat-peg-parser.cpp`. There are no per-model format enums any more: formats are `PEG_SIMPLE`/`PEG_NATIVE`/`PEG_GEMMA4`/`PEG_MINIMAX_M3`, derived from the chat template. Test templates are in `models/templates/`. |
 | Ollama | v0.34.4 (2026-09-23) | tag `v0.34.4` | `model/parsers/parsers.go` (names such as `qwen3`, `qwen3.5`, `qwen3-coder`, `harmony`, `deepseek3`, `glm-4.7`, `gemma4`, `ministral`). Other families go through the generic template-driven `tools/` package. |

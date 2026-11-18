@@ -25,7 +25,6 @@ Sizes: **S** is an hour or two, **M** is a day, **L** is several days or needs a
 | Spec: how generation ended, and fixtures that assume an ignored stop token ([#9](https://github.com/redd34/canitoolcall/issues/9)) | M | The fields landed in [#38](https://github.com/redd34/canitoolcall/pull/38) (spec 0.2). Left: whatever #9 still lists after that first PR. |
 | One shared report validator (*no issue yet*) | S | The report checks added in [#31](https://github.com/redd34/canitoolcall/pull/31) live in one function that the compiled-engine verifier ([#33](https://github.com/redd34/canitoolcall/pull/33)) also uses, once that lands. |
 | Native Windows paths (*no issue yet*) | S | `.venvs/<engine>/bin/python` is hard-coded in `adapters/__init__.py` and `verify_upstream_pr.py`; use `Scripts\python.exe` on Windows. Needs a Windows run to confirm. |
-| Verify vllm#51577 (*no issue yet*) | S | The llama3 JSON parser rewrite that replaced the closed vllm#58826. It moves the parser to a new module, so the overlay may exit 3 on vLLM 0.30.0; report whichever happens. |
 
 ## Next: wider coverage
 

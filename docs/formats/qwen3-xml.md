@@ -111,7 +111,7 @@ The older templates use Jinja `| string` on Python values, which yields `True`/`
 
 | Engine | Tool parser | Reasoning parser |
 |---|---|---|
-| vLLM v0.30.0 | `qwen3_coder` or `qwen3_xml`: both map to `Qwen3EngineToolParser` (`vllm/tool_parsers/qwen3_engine_tool_parser.py`), with the grammar in `vllm/parser/qwen3.py`. `mimo` also reuses it. | `qwen3` |
+| vLLM v0.34.0 | `qwen3_coder` or `qwen3_xml`: both map to `Qwen3EngineToolParser` (`vllm/tool_parsers/qwen3_engine_tool_parser.py`), with the grammar in `vllm/parser/qwen3.py`. (`mimo` reused it up to v0.30.0; v0.34.0 gives it its own `MiMoToolParser`.) | `qwen3` |
 | SGLang v0.5.20 | `qwen3_coder` (`Qwen3CoderDetector`); also reused by `step3p5` and `nanbeige` | `qwen3` |
 | llama.cpp v0.5.0 | Automatic (PEG), from template. Test templates: `models/templates/Qwen3-Coder.jinja`, `Qwen3.5-4B.jinja` | same |
 | Ollama v0.34.4 | `qwen3-coder`, `qwen3.5` | built in |

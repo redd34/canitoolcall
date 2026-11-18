@@ -96,7 +96,7 @@ All of these are control tokens. With `skip_special_tokens=True` they disappear 
 
 | Engine | Tool parser | Reasoning parser | Notes |
 |---|---|---|---|
-| vLLM v0.30.0 | `mistral` (`MistralToolParser`; grammar `vllm/parser/mistral.py`, which handles "both pre-v11 JSON-array and v11+ `funcname{args}` formats") | `mistral` (`MistralParserReasoningAdapter`) | The Medium-3.5, Small-4 and Devstral-2 model cards use `--tool-call-parser mistral --enable-auto-tool-choice`, and Medium-3.5 and Small-4 add `--reasoning-parser mistral`. `supports_required_and_named = False`, because `tool_choice` is enforced through the mistral-common grammar. |
+| vLLM v0.34.0 | `mistral` (`MistralToolParser`; grammar `vllm/parser/mistral.py`, which handles "both pre-v11 JSON-array and v11+ `funcname{args}` formats") | `mistral` (`MistralParserReasoningAdapter`) | The Medium-3.5, Small-4 and Devstral-2 model cards use `--tool-call-parser mistral --enable-auto-tool-choice`, and Medium-3.5 and Small-4 add `--reasoning-parser mistral`. `supports_required_and_named = False`, because `tool_choice` is enforced through the mistral-common grammar. |
 | SGLang v0.5.20 | `mistral` (`MistralDetector`, canonical bot `"[TOOL_CALLS] ["`; also parses compact `[TOOL_CALLS]name[ARGS]{…}` and tolerates missing `]`/`[ARGS` delimiters while streaming) | `mistral` | |
 | llama.cpp v0.5.0 | PEG, from template. Test templates: `Mistral-Small-3.2-24B-Instruct-2506.jinja`, `mistralai-Ministral-3-14B-Reasoning-2512.jinja`, `mistralai-Mistral-Nemo-Instruct-2407.jinja`, `unsloth-mistral-Devstral-Small-2507.jinja` | same | |
 | Ollama v0.34.4 | `ministral`, plus generic template-driven detection for older models | | |
