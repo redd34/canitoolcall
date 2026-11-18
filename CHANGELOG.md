@@ -6,6 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- New engine adapter `mlx_lm` for mlx-lm 0.32.2 (`scripts/engines/mlx_lm.sh`, `.venvs/mlx_lm`). It runs `mlx_lm.server`'s own `/v1/chat/completions` handler with the tool parser `load_tokenizer` selects for each repo: `json_tools` (qwen3-hermes), `qwen3_coder` (qwen3-xml), `glm47` (glm), `gemma4`, `kimi_k2`/`kimi_k3` (kimi) and `mistral` (Mistral repos that ship an HF chat template). gpt-oss, DeepSeek and Llama are `unsupported`. The server streams one token per event, so only `token` counts. The env needs mlx: macOS arm64, or Linux through the `mlx-cpu` wheels. Where mlx cannot be installed or imported, the setup script exits 3 and the nightly skips the engine. It is not in the committed results snapshot.
 - The verifiers (`scripts/verify_upstream_pr.py`, `scripts/verify_compiled_pr.py`) now print the `unsupported` count on the `fixtures replayed` line, e.g. `fixtures replayed: 48 (N unsupported)`, and their JSON reports gain an `unsupported` field.
 
 ## [0.2.0] - 2026-11-15

@@ -25,7 +25,7 @@ def test_validate_bad(tmp_path: Path) -> None:
 def test_engines_lists_all(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["engines"]) == EXIT_OK
     out = capsys.readouterr().out
-    for engine in ("vllm", "sglang", "llamacpp", "ollama", "transformers"):
+    for engine in ("vllm", "sglang", "llamacpp", "ollama", "transformers", "mlx_lm"):
         assert engine in out
 
 

@@ -32,7 +32,7 @@ from canitoolcall.fixtures import (
 )
 from canitoolcall.results import CheckResult, ParseResult, Status
 
-ENGINES = ("vllm", "sglang", "llamacpp", "ollama", "transformers")
+ENGINES = ("vllm", "sglang", "llamacpp", "ollama", "transformers", "mlx_lm")
 MARKED = {"gpt-oss/vllm-sequential-calls", "gpt-oss/vllm-call-then-final"}
 
 
@@ -207,7 +207,7 @@ def test_two_annotated_cases_refuse_without_engine_imports(engine: str) -> None:
         else:
             assert raw.assumes is None and raw.finish is None
             assert current == previous
-    assert not {name for name in set(sys.modules) - before if name.split(".")[0] in set(ENGINES) | {"torch"}}
+    assert not {name for name in set(sys.modules) - before if name.split(".")[0] in set(ENGINES) | {"torch", "mlx"}}
 
 
 def test_marked_and_unmarked_in_same_actual_worker(sample: dict[str, Any], reference_adapter_spec: str) -> None:
