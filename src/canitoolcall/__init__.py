@@ -11,7 +11,7 @@ adapter worker runs inside each engine's isolated virtualenv.
 
 from __future__ import annotations
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 SPEC_VERSION = "0.2"
 """Fixture spec version this package reads and writes (see spec/README.md)."""

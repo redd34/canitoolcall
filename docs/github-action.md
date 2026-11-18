@@ -10,7 +10,7 @@ The repository root has a composite action ([`action.yml`](../action.yml)) that 
 
 It covers the live probe only. Replaying the offline fixture suite through an engine's parsers needs the engine's isolated environment (`scripts/engines/<engine>.sh`) and is not part of the action; for that, see the pytest plugin in the [README](../README.md#for-engine-maintainers-vendor-the-fixtures).
 
-> **Version tags.** `uses: redd34/canitoolcall@v0` works once a maintainer pushes a `v0` tag that contains `action.yml`. The `v0.2.0` tag and older ones predate the action. Until then, and for supply-chain safety in general, pin a full commit SHA: `uses: redd34/canitoolcall@<40-character SHA> # v0`.
+> **Version tags.** `uses: redd34/canitoolcall@v0` works from 0.3.0 on: the moving `v0` tag points at the latest 0.x release, and its `version` default installs that same release. The `v0.2.0` tag and older ones predate the action. For supply-chain safety, pin a full commit SHA: `uses: redd34/canitoolcall@<40-character SHA> # v0`.
 
 ## Inputs
 
@@ -20,7 +20,7 @@ It covers the live probe only. Replaying the offline fixture suite through an en
 | `model` | (required) | model name sent in each request |
 | `api-key-env` | `""` | the **name** of the environment variable that holds the API key, never the key. Set the variable from a secret in the step's `env:`. Empty uses canitoolcall's default, `CANITOOLCALL_API_KEY`; an unset variable means no key is sent. |
 | `args` | `""` | extra `probe` arguments, split on whitespace with no shell quoting, e.g. `--no-stream --timeout 120` |
-| `version` | the current release (`0.2.0`) | canitoolcall release installed from PyPI |
+| `version` | the current release (`0.3.0`) | canitoolcall release installed from PyPI |
 | `package` | `""` | install this instead of `canitoolcall==<version>` (passed to `uvx --from`), e.g. a checkout path or a git URL |
 | `json-report` | `canitoolcall-probe.json` | where the JSON report is written. A file already at that path is removed before the probe runs, so a run that writes no report (unreachable endpoint, usage error) shows "no report" rather than an old one. Give each probe step in a job its own path. |
 | `artifact-name` | `canitoolcall-probe` | name of the uploaded report artifact; empty skips the upload. Give each probe step in a run its own name. |
