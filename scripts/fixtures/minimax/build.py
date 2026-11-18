@@ -516,11 +516,12 @@ def build_truncated(tok: Any, renders: dict[str, Rendered], sha: str) -> list[di
         single.name,
         raw,
         ids,
-        expected_error={
-            "reason": "max_tokens hit after </invoke>; </minimax:tool_call> is missing.",
-            "accept": accept,
-        },
+        expected=expected_from(single.msg),
         tags=["truncated", "x-m2"],
+        notes=(
+            "max_tokens hit after </invoke>; only </minimax:tool_call> is missing. The call is closed, so a correct "
+            "parser keeps it with content null (docs/formats/recovery.md, section 2)."
+        ),
     )
     raw, ids = cut_before(r, tok, '<parameter name="unit">')
     rec(

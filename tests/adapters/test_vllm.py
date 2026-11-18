@@ -117,6 +117,7 @@ def test_parser_map_covers_known_families_only() -> None:
         ("llama", "meta-llama/Llama-2-7b-chat-hf"),
         ("gemma4", "google/gemma-3-27b-it"),
         ("minimax", "MiniMaxAI/MiniMax-M3"),
+        ("minimax", "MiniMaxAI/MiniMax-M20"),
     ],
 )
 def test_unsupported_is_honest(family: str, model: str) -> None:

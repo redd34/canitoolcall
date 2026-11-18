@@ -166,7 +166,7 @@ PARSERS: dict[str, tuple[ModelRule, ...]] = {
     ),
     "minimax": (
         _rule(
-            r"MiniMax-M2",
+            r"MiniMax-M2(?!\d)",
             "minimax_m2",
             "minimax_m2",
             "docs/formats/minimax.md (vLLM v0.30.0 row); the model cards use minimax_m2_append_think, "

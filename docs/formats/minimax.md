@@ -121,7 +121,7 @@ Checked in the source of the pinned releases (the PyPI artifacts of vLLM 0.30.0 
 
 No fixture for #57826 is included: the issue was not read for this family, and a MiniMax string cannot be quoted from it. Adding it (derived, tagged `x-derived`) is a follow-up.
 
-**Fixture tags to cover:** `number-looking-string`, `schema-coercion`, `json-looking-string`, `significant-whitespace`, `x-call-index-vs-tool-index`, `x-think-no-open-tag`, and `marker-in-arguments` (a value containing `<minimax:tool_call>`, `</minimax:tool_call>` and the opening `<invoke>` and `<parameter>` tags, but not `</parameter>`).
+**Fixture tags to cover:** `x-number-looking-string`, `x-schema-coercion`, `x-json-looking-string`, `x-significant-whitespace`, `x-call-index-vs-tool-index`, `x-think-no-open-tag`, and `marker-in-arguments` (a value containing `<minimax:tool_call>`, `</minimax:tool_call>` and the opening `<invoke>` and `<parameter>` tags, but not `</parameter>`).
 
 ## Fixtures in this repo
 
@@ -130,7 +130,7 @@ No fixture for #57826 is included: the issue was not read for this family, and a
 | File | Source | `models` |
 |---|---|---|
 | `render.jsonl` (18) | MiniMax-M2.1 `chat_template.jinja` @ `917dbb7` | M2.1, M2.7, M2.5, M2 (renders checked identical, tokens and text) |
-| `truncated.jsonl` (5) | token prefixes of `minimax/single-call`: at the start of a value (right after the opening `<parameter name="unit">` tag), between parameters, before `</invoke>`, before `</minimax:tool_call>`, and inside the reasoning | M2.1 |
+| `truncated.jsonl` (5) | token prefixes of `minimax/single-call`: at the start of a value (right after the opening `<parameter name="unit">` tag), between parameters, before `</invoke>`, before `</minimax:tool_call>`, and inside the reasoning. Cut before `</minimax:tool_call>`, the call is already closed by `</invoke>`, so it is expected with `content: null` ([recovery contract](recovery.md#2-truncated-before-the-outer-close-max_tokens), section 2) | M2.1 |
 
 Notes:
 - **Expected content and reasoning** are the message as authored. The template separators (`</think>\n\n`, and the `\n` before `<minimax:tool_call>`) are format glue, not content. Engines that keep them get `soft_pass`.
