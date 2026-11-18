@@ -477,7 +477,12 @@ class RawServer:
                 except (BrokenPipeError, ConnectionResetError):
                     self.close_connection = True
 
-        self.srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+        class Server(ThreadingHTTPServer):
+            # The default backlog of 5 overflows when 8 probe requests connect at once; on Linux a connection can
+            # then stall until its socket timeout, which these tests would misread as a missed overall deadline.
+            request_queue_size = 64
+
+        self.srv = Server(("127.0.0.1", 0), H)
         self.srv.daemon_threads = True
         self.base_url = f"http://127.0.0.1:{self.srv.server_address[1]}/v1"
         threading.Thread(target=self.srv.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True).start()
@@ -816,7 +821,8 @@ def _assert_all_error_by_deadline(data: dict[str, Any], elapsed: float, bound: f
     assert elapsed < bound, elapsed
     assert data["outcomes"]
     assert all(o["status"] == "error" for o in data["outcomes"])
-    assert all("overall deadline" in (o.get("detail") or "") for o in data["outcomes"])
+    details = [o.get("detail") for o in data["outcomes"]]
+    assert all("overall deadline" in (d or "") for d in details), details
 
 
 def test_dripped_response_headers_hit_the_deadline(matrix_path: Path, raw_server: Any) -> None:
