@@ -41,7 +41,18 @@ from canitoolcall.chunking import ChunkStrategy, split
 from canitoolcall.fixtures import Fixture, TokenizerPin, load_families, load_fixtures, read_jsonl, repo_root
 from canitoolcall.results import ParsedToolCall, ParseResult
 
-FAMILY_SLUGS = ("qwen3-hermes", "qwen3-xml", "gpt-oss", "deepseek", "kimi", "glm", "llama", "mistral", "gemma4")
+FAMILY_SLUGS = (
+    "qwen3-hermes",
+    "qwen3-xml",
+    "gpt-oss",
+    "deepseek",
+    "kimi",
+    "glm",
+    "llama",
+    "mistral",
+    "gemma4",
+    "nemotron",
+)
 PIN = "a25c9865fe03c954c93fd755b5d79ae86ba99750"
 
 # --------------------------------------------------------------------------- fast (no build)

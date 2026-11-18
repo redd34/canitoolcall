@@ -17,6 +17,7 @@ These notes are the reference for writing fixtures. Every rendered example in th
 | [`llama`](llama.md) | Llama 3.1, 3.2, 3.3 and 4 | Llama-3.1-8B, 3.2-1B/3B, 3.3-70B, Llama-4-Scout/Maverick | 3.1/3.3: bare JSON `{"name":…, "parameters":…}`; 3.2/4: pythonic `[f(a=1)]` |
 | [`mistral`](mistral.md) | Mistral, Magistral, Devstral, Ministral | Mistral-Small-4, Mistral-Medium-3.5, Ministral-3, Devstral-2, Magistral-2509, Mistral-Small-3.2 | depends on tokenizer version: `[TOOL_CALLS][{…}]` (v3/v7), `[TOOL_CALLS]NAME[CALL_ID]ID[ARGS]{…}` (v11), `[TOOL_CALLS]NAME[ARGS]{…}` (v13+) |
 | [`gemma4`](gemma4.md) | Gemma 4 (and a note on Gemma 3) | gemma-4-31B-it, 26B-A4B-it, 12B-it, E4B/E2B-it | `<\|tool_call>call:NAME{key:<\|"\|>str<\|"\|>,n:3}<tool_call\|>`: **not JSON** |
+| [`nemotron`](nemotron.md) | NVIDIA Nemotron 3 and 3.5 (added 2026-11-19) | Nemotron-3-Nano-4B, 3-Nano-30B-A3B, 3-Super-120B-A12B, 3.5-Lightning-30B-A3B, 3-Ultra-550B-A55B | the `qwen3-xml` call block (`<tool_call>\n<function=NAME>\n<parameter=K>\nV\n</parameter>…`) + `<think>` pre-filled, closed by `\n</think>\n` (3) or `</think>\n` (3.5) |
 
 Cross-family rules for malformed and truncated output are in [`recovery.md`](recovery.md) (proposed, [#36](https://github.com/redd34/canitoolcall/issues/36)).
 
@@ -29,13 +30,13 @@ The HF API was queried by author on 2026-09-25, sorted by downloads and by creat
 - **Google:** Gemma 4 (2026-03…05) is current.
 - **Mistral:** Mistral-Medium-3.5 and Small-4 (2026-01…03) are current.
 - **OpenAI:** gpt-oss (2025-08) is still the only open-weight LLM.
+- **NVIDIA** (queried 2026-11-19 for the `nemotron` family): Nemotron-3-Nano-4B is the most-downloaded Nemotron 3/3.5 text model; Nemotron-3.5-Lightning (2026-08) is the 3.5 text model covered. Nemotron-3.5-Bolt (2026-10, Gemma 4 based) and the image-text Nemotron-3.5-Super-VL (2026-10) are not covered.
 - **Meta:** there has been no new open-weight Llama since Llama 4 (2025-04). Llama is kept because 3.x is still among the most-downloaded instruct models (Llama-3.1-8B-Instruct has 6.2M downloads).
 
 ### Not covered yet (next candidates)
 - **MiniMax M2.x/M3 and MiniMax-H3.** High download counts, and both vLLM and SGLang have dedicated parsers (`minimax_m2`, `minimax_m3`). Formats rendered during this research, from the official templates:
   - **M2.7** (rev `d494266`): `<minimax:tool_call>\n<invoke name="…">\n<parameter name="k">v</parameter>…`
   - **M3** (rev `f0e1c1e`): `]<]minimax[>[<tool_call>` with per-key XML elements such as `<city>Zürich]<]minimax[>[</city>`
-- **NVIDIA Nemotron 3 / 3.5.** vLLM `nemotron_v3` reasoning parser, SGLang `nemotron_3`.
 
 ## 2. Engine versions the parser mappings refer to
 

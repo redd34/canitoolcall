@@ -119,6 +119,20 @@ PARSER_RULES: tuple[ParserRule, ...] = (
     ParserRule("glm", r"GLM-4\.7|GLM-5", "glm-4.7", f"{_LIB}: glm-4.7-flash; create/metadata.go glm4 -> glm-4.7"),
     ParserRule("gemma4", r"gemma-4", "gemma4", f"{_LIB}: gemma4"),
     ParserRule("mistral", r"Ministral-3|/Devstral-2-", "ministral", f"{_LIB}: ministral-3, devstral-2"),
+    # Both names construct Nemotron3NanoParser (model/parsers/parsers.go). Nemotron-3.5-Bolt is Gemma 4 based.
+    ParserRule(
+        "nemotron",
+        r"Nemotron-3-Ultra",
+        "nemotron-3.5-nano",
+        "create/metadata.go nemotronRendererParserNameFromTemplate: nemotron_h + '{reasoning effort: efficient}' "
+        "in the template -> nemotron-3.5-nano",
+    ),
+    ParserRule(
+        "nemotron",
+        r"Nemotron-3(\.5)?-(Nano|Super|Lightning)",
+        "nemotron-3-nano",
+        "create/metadata.go nemotronRendererParserNameFromTemplate: nemotron_h architectures -> nemotron-3-nano",
+    ),
 )
 """First matching rule wins. Principle: the built-in parser Ollama ships for the
 model's output format, as the Ollama library configures it where a published

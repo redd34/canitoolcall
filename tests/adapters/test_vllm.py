@@ -46,7 +46,18 @@ from canitoolcall.fixtures import (
     repo_root,
 )
 
-FAMILY_SLUGS = ("qwen3-hermes", "qwen3-xml", "gpt-oss", "deepseek", "kimi", "glm", "llama", "mistral", "gemma4")
+FAMILY_SLUGS = (
+    "qwen3-hermes",
+    "qwen3-xml",
+    "gpt-oss",
+    "deepseek",
+    "kimi",
+    "glm",
+    "llama",
+    "mistral",
+    "gemma4",
+    "nemotron",
+)
 
 # --------------------------------------------------------------------------- fast (no engine)
 
@@ -84,6 +95,10 @@ FAMILY_SLUGS = ("qwen3-hermes", "qwen3-xml", "gpt-oss", "deepseek", "kimi", "glm
         ("mistral", "mistralai/Magistral-Small-2506", "mistral", "mistral"),
         ("mistral", "mistralai/Devstral-Small-2507", "mistral", None),
         ("gemma4", "google/gemma-4-31B-it", "gemma4", "gemma4"),
+        ("nemotron", "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16", "qwen3_coder", "nemotron_v3"),
+        ("nemotron", "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16", "qwen3_coder", "nemotron_v3"),
+        ("nemotron", "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16", "qwen3_coder", "nemotron_v3"),
+        ("nemotron", "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16", "qwen3_coder", "nemotron_v3"),
     ],
 )
 def test_parser_map(family: str, model: str, tool: str, reasoning: str | None) -> None:
@@ -103,6 +118,7 @@ def test_parser_map_covers_known_families_only() -> None:
         ("no-such-family", "Qwen/Qwen3-0.6B"),
         ("llama", "meta-llama/Llama-2-7b-chat-hf"),
         ("gemma4", "google/gemma-3-27b-it"),
+        ("nemotron", "nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16"),
     ],
 )
 def test_unsupported_is_honest(family: str, model: str) -> None:

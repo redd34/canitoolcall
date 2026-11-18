@@ -42,3 +42,20 @@ def test_llama_obligations_met(license_id: str) -> None:
     assert "Built with Llama" in notices
     assert "Built with Llama" in (ROOT / "README.md").read_text(encoding="utf-8")
     assert "Built with Llama" in (ROOT / "site" / "templates" / "base.html").read_text(encoding="utf-8")
+
+
+NVIDIA = {
+    # Both require a copy of the license with every distribution (NVIDIA Nemotron Open Model
+    # License 3.a; OpenMDW-1.1, which also requires keeping the copyright notice).
+    "LicenseRef-nvidia-nemotron-open-model-license": "nvidia-nemotron-open-model-license.txt",
+    "LicenseRef-OpenMDW-1.1": "openmdw-1.1.txt",
+}
+
+
+@pytest.mark.parametrize("license_id", sorted(NVIDIA))
+def test_nvidia_license_copies_shipped(license_id: str) -> None:
+    if license_id not in _corpus_licenses():
+        pytest.skip(f"no fixture uses {license_id}")
+    text = NVIDIA[license_id]
+    assert (ROOT / "LICENSES" / text).is_file()
+    assert f"`LICENSES/{text}`" in (ROOT / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")

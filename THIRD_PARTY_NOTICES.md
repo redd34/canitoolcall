@@ -31,6 +31,8 @@ every distribution are in `LICENSES/`.
 | `moonshotai/Kimi-K2.6` | Modified MIT License, Copyright (c) 2026 Moonshot AI | `LICENSES/kimi-k2.6-modified-MIT.txt` |
 | `moonshotai/Kimi-K3` | Kimi K3 License, Copyright (c) 2026 Moonshot AI | `LICENSES/kimi-k3.txt` |
 | `meta-llama/Llama-3.3-70B-Instruct` (template via the `unsloth/Llama-3.3-70B-Instruct` mirror) | Llama 3.3 Community License | `LICENSES/llama3.3-community.txt` |
+| `nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16` (also listed: `-3-Nano-30B-A3B-BF16`, `-3-Super-120B-A12B-BF16`) | NVIDIA Nemotron Open Model License (v. December 15, 2025; the repositories ship no NOTICE file) | `LICENSES/nvidia-nemotron-open-model-license.txt` |
+| `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` (also listed: `-3-Ultra-550B-A55B-BF16`) | OpenMDW-1.1, Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES | `LICENSES/openmdw-1.1.txt` |
 | Qwen, Gemma 4, gpt-oss, Mistral repositories and `openai-harmony` | Apache-2.0 | `LICENSE` |
 
 ## Short quotes

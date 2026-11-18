@@ -87,6 +87,10 @@ def test_registered_and_pinned() -> None:
         ("gemma4", "google/gemma-4-31B-it", None, "gemma4"),
         ("mistral", "mistralai/Ministral-3-8B-Instruct-2512", None, "ministral"),
         ("mistral", "mistralai/Devstral-2-123B-Instruct-2512", None, "ministral"),
+        ("nemotron", "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16", None, "nemotron-3-nano"),
+        ("nemotron", "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16", False, "nemotron-3-nano"),
+        ("nemotron", "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16", None, "nemotron-3-nano"),
+        ("nemotron", "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16", None, "nemotron-3.5-nano"),
     ],
 )
 def test_parser_selection(family: str, model: str, thinking: bool | None, parser: str) -> None:
@@ -107,6 +111,7 @@ def test_parser_selection(family: str, model: str, thinking: bool | None, parser
         ("mistral", "mistralai/Mistral-Small-3.2-24B-Instruct-2506"),
         ("mistral", "mistralai/Devstral-Small-2-24B-Instruct-2512"),
         ("qwen3-xml", "Qwen/Qwen3-0.6B"),
+        ("nemotron", "nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16"),
     ],
 )
 def test_unsupported_is_honest(family: str, model: str) -> None:

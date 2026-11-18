@@ -178,6 +178,16 @@ PARSERS: dict[str, tuple[ModelRule, ...]] = {
         _rule(r"mistral|ministral|devstral", "mistral", None, "Mistral model cards: --tool-call-parser mistral"),
     ),
     "gemma4": (_rule(r"gemma-4", "gemma4", "gemma4", "docs/formats/gemma4.md (vLLM v0.30.0 row)"),),
+    "nemotron": (
+        # Nemotron-3.5-Bolt is Gemma 4 based (a different format) and matches no rule.
+        _rule(
+            r"Nemotron-3(\.5)?-(Nano|Super|Ultra|Lightning)",
+            "qwen3_coder",
+            "nemotron_v3",
+            "Nemotron 3 Super / 3.5 Lightning model cards: --tool-call-parser qwen3_coder --reasoning-parser "
+            "nemotron_v3; docs/formats/nemotron.md",
+        ),
+    ),
 }
 """family slug -> ordered model rules (see :func:`resolve_parsers`)."""
 

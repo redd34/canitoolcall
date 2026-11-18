@@ -1,0 +1,80 @@
+{
+  "slug": "nemotron",
+  "name": "NVIDIA Nemotron 3 and 3.5",
+  "spec_version": "0.2",
+  "has_reasoning": true,
+  "markers": [
+    "<tool_call>",
+    "</tool_call>",
+    "<function=",
+    "</function>",
+    "<parameter=",
+    "</parameter>",
+    "<think>",
+    "</think>",
+    "<tool_response>",
+    "</tool_response>",
+    "<|im_start|>",
+    "<|im_end|>",
+    "</s>"
+  ],
+  "reference_models": [
+    {
+      "repo": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
+      "revision": "dfaf35de3e30f1867dd8dbc38a7fc9fb52d3914f",
+      "variant": "nemotron-3",
+      "default_generation_prompt": "<|im_start|>assistant\n<think>\n",
+      "stop_tokens": [
+        "</s>",
+        "<|im_end|>"
+      ],
+      "tokenizer_mode": "hf"
+    },
+    {
+      "repo": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16",
+      "revision": "bf77c3174f68ad409e1c2aa60daeb46e32d1c606",
+      "variant": "nemotron-3",
+      "default_generation_prompt": "<|im_start|>assistant\n<think>\n",
+      "stop_tokens": [
+        "</s>",
+        "<|im_end|>"
+      ],
+      "tokenizer_mode": "hf"
+    },
+    {
+      "repo": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16",
+      "revision": "2dc98e2afe4face0e4ce40972a915c45368bd34a",
+      "variant": "nemotron-3",
+      "default_generation_prompt": "<|im_start|>assistant\n<think>\n",
+      "stop_tokens": [
+        "</s>",
+        "<|im_end|>"
+      ],
+      "tokenizer_mode": "hf"
+    },
+    {
+      "repo": "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+      "revision": "a9904d24bcc1d289a1950fa9d2b978c47cf903b9",
+      "variant": "nemotron-3.5",
+      "default_generation_prompt": "<|im_start|>assistant\n<think>\n",
+      "stop_tokens": [
+        "</s>",
+        "<|im_end|>"
+      ],
+      "tokenizer_mode": "hf"
+    },
+    {
+      "repo": "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16",
+      "revision": "77df655d5e9f8362164ed14dd8b48f8bce657498",
+      "variant": "nemotron-3.5",
+      "default_generation_prompt": "<|im_start|>assistant\n<think>\n",
+      "stop_tokens": [
+        "</s>",
+        "<|im_end|>"
+      ],
+      "tokenizer_mode": "hf"
+    }
+  ],
+  "format_notes": "docs/formats/nemotron.md",
+  "notes": "Tool calls use the Qwen3-Coder XML format (<tool_call>\\n<function=NAME>\\n<parameter=K>\\nV\\n</parameter>...); string values are raw and scalars render with Jinja '| string' (True/None), so a parser needs the tool schema. Thinking is on by default: the generation prompt pre-fills '<think>\\n'; enable_thinking=false pre-fills '<think></think>'. Variants differ only in how reasoning closes: nemotron-3 '\\n</think>\\n', nemotron-3.5 '</think>\\n'. Stop tokens: generation_config.json eos_token_id plus the tokenizer's eos_token <|im_end|> (Nano-4B's generation config lists only </s>). Tags x-nemotron3/x-nemotron35 name the reference template. Generator: scripts/fixtures/nemotron/build.py."
+}

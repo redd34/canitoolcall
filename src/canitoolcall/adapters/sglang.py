@@ -138,6 +138,12 @@ PARSERS: dict[str, tuple[ParserRule, ...]] = {
         ParserRule("*", "mistral", None),
     ),
     "gemma4": (ParserRule("*", "gemma4", "gemma4"),),
+    # Nemotron 3 Super / 3.5 Lightning model cards: --tool-call-parser qwen3_coder --reasoning-parser nemotron_3.
+    # Nemotron-3.5-Bolt is Gemma 4 based (a different format) and matches no rule.
+    "nemotron": tuple(
+        ParserRule(f"Nemotron-{m}", "qwen3_coder", "nemotron_3")
+        for m in ("3-Nano", "3-Super", "3-Ultra", "3.5-Lightning")
+    ),
 }
 
 HARMONY_CALL = "<|call|>"
