@@ -270,6 +270,15 @@ Use `--canitoolcall-fixtures PATH` to test against your own copy of the corpus.
 
 **Does family or model X parse on engine Y?** Ask without a checkout: `canitoolcall lookup qwen3-hermes --engine vllm` (or a model name such as `Qwen/Qwen3.5-9B`, and `--json` for scripts). It reads the published [`matrix.json`](https://redd34.github.io/canitoolcall/matrix.json) (this works once the site has been rebuilt by a release that includes `lookup`; until then the published file has no `schema_version` and `lookup` says so, and `--matrix PATH_OR_URL` reads a newer one). The exit code is 0 whenever the lookup works, even if the status is `fail`; scripts should read `status` from `--json`. Queries of fewer than 3 characters only match exactly. The format is documented in [`spec/README.md`](spec/README.md#matrixjson).
 
+**Can I put a status badge in my README or model card?** Yes. Cell pages of the newest version of each engine have a "Badges" section with a Markdown snippet. They are [shields.io endpoint badges](https://shields.io/badges/endpoint-badge) backed by JSON the site publishes from the same data as `matrix.json`: `badges/<engine>/<family>.json` (for example `fail · 23/54 strict pass`, `soft pass · 2/3 strict pass` or `unsupported`; the count is strict passes over supported cases, not a failure rate) and `badges/<engine>.json` (for example `7/9 families pass`). Working example for the published site:
+
+```md
+![qwen3-hermes on vllm](https://img.shields.io/endpoint?url=https%3A%2F%2Fredd34.github.io%2Fcanitoolcall%2Fbadges%2Fvllm%2Fqwen3-hermes.json)
+![vllm](https://img.shields.io/endpoint?url=https%3A%2F%2Fredd34.github.io%2Fcanitoolcall%2Fbadges%2Fvllm.json)
+```
+
+If you host a fork, replace `https%3A%2F%2Fredd34.github.io%2Fcanitoolcall` with your site URL, percent-encoded (`:` as `%3A`, `/` as `%2F`). The snippets on cell pages use the URL the site was built with (`canitoolcall matrix --site-url URL`), or the published site's URL without it.
+
 **Can my agent ask this over MCP?** Yes. `pip install 'canitoolcall[mcp]'` adds `canitoolcall mcp`, a stdio [MCP](https://modelcontextprotocol.io) server with four tools: `lookup` (same answer as `canitoolcall lookup --json`), `list_families`, `list_engines` and `probe`. Claude Code: `claude mcp add canitoolcall -- uvx --from 'canitoolcall[mcp]' canitoolcall mcp`. Other clients (generic `mcpServers` JSON):
 
 ```json
