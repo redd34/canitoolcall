@@ -102,6 +102,7 @@ FAMILIES: Mapping[str, str] = {
     "llama": "autoparser (from the chat template)",
     "mistral": "specialized handler 'Ministral/Magistral Large 3', autoparser otherwise",
     "gemma4": "specialized handler (format peg-gemma4)",
+    "seed-oss": "autoparser (from the chat template)",
 }
 """Family slug -> how llama.cpp (at the pin) builds that family's parser."""
 

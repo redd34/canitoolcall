@@ -139,7 +139,12 @@ def test_deepseek_v41_is_unsupported() -> None:
 
 @pytest.mark.parametrize(
     ("family", "model"),
-    [("nope", "org/model"), ("llama", "meta-llama/Llama-2-7b-chat-hf"), ("minimax", "MiniMaxAI/MiniMax-M3")],
+    [
+        ("nope", "org/model"),
+        ("llama", "meta-llama/Llama-2-7b-chat-hf"),
+        ("minimax", "MiniMaxAI/MiniMax-M3"),
+        ("seed-oss", "ByteDance-Seed/Seed-OSS-36B-Instruct"),
+    ],
 )
 def test_unknown_pairs_are_unsupported(family: str, model: str) -> None:
     sup = SglangAdapter().supports(family, model)
