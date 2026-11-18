@@ -17,10 +17,11 @@ import tempfile
 from pathlib import Path
 
 from compiled_process import VerificationInterrupted, run_logged
+from replay_report import check_inventories
+from replay_report import read_cases as read_report
 
 REPOSITORIES = {"ollama": "ollama/ollama", "llamacpp": "ggml-org/llama.cpp"}
 ADAPTERS = {"ollama": "ollama:OllamaAdapter", "llamacpp": "llamacpp:LlamaCppAdapter"}
-STATUSES = {"pass", "soft_pass", "fail", "error", "unsupported"}
 GOOD = {"pass", "soft_pass"}
 BAD = {"fail", "error"}
 
@@ -158,24 +159,10 @@ def build(
 
 
 def read_cases(out: Path, exit_code: int) -> dict[str, str]:
-    if exit_code not in (0, 1):
-        raise RuntimeError(f"replay exited {exit_code}; see replay.log")
-    found = sorted(out.glob("*.json"))
-    if len(found) != 1:
-        raise RuntimeError(f"expected one results file, found {len(found)}")
-    value = json.loads(found[0].read_text(encoding="utf-8"))
-    if not isinstance(value, dict) or not isinstance(value.get("cases"), list) or not value["cases"]:
-        raise RuntimeError("replay needs a nonempty cases list")
-    cases: dict[str, str] = {}
-    for case in value["cases"]:
-        if not isinstance(case, dict):
-            raise RuntimeError("invalid case object")
-        key, status = case.get("fixture_id"), case.get("status")
-        if not isinstance(key, str) or not key.strip() or key in cases:
-            raise RuntimeError("missing or duplicate fixture ID")
-        if not isinstance(status, str) or status not in STATUSES:
-            raise RuntimeError(f"invalid status for {key!r}")
-        cases[key] = status
+    try:
+        cases = read_report(out, exit_code)
+    except RuntimeError as exc:
+        raise RuntimeError(f"{exc}; see replay.log") from exc
     if all(status == "unsupported" for status in cases.values()):
         raise RuntimeError("no supported fixtures were replayed")
     return cases
@@ -199,8 +186,7 @@ def replay(root: Path, families: list[str], destination: Path, env: dict[str, st
 
 
 def compare(base: dict[str, str], head: dict[str, str]) -> dict[str, object]:
-    if base.keys() != head.keys():
-        raise RuntimeError("base and head fixture inventories differ; comparison is incomplete")
+    check_inventories(base, head)
     if any((base[key] == "unsupported") != (head[key] == "unsupported") for key in base):
         raise RuntimeError("support coverage changed; comparison is incomplete")
     changed = sorted((key, base[key], head[key]) for key in base if base[key] != head[key])
