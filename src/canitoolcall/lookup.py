@@ -29,7 +29,15 @@ MIN_PARTIAL = 3
 
 
 class LookupFailure(Exception):
-    """A user-facing failure (bad source, unknown name, unsupported schema)."""
+    """A user-facing failure (bad source, unknown name, unsupported schema).
+
+    The message is passed through :func:`clean`, so text that came from a
+    hostile matrix.json (a family slug, an engine name, the source) can never
+    put control characters on the terminal, whichever ``raise`` built it.
+    """
+
+    def __init__(self, message: object) -> None:
+        super().__init__(clean(message))
 
 
 _STATUSES = frozenset(s.value for s in Status)

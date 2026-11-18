@@ -755,3 +755,19 @@ def test_badge_messages_and_colors() -> None:
     assert badge_markdown("badges/x.json", "x", "https://example.org/site").endswith(
         "?url=https%3A%2F%2Fexample.org%2Fsite%2Fbadges%2Fx.json)"
     )
+
+
+def test_lookup_failure_messages_are_sanitised() -> None:
+    from canitoolcall.lookup import LookupFailure, lookup
+
+    assert "\x1b" not in str(LookupFailure("bad \x1b[31mred\x1b[0m ‮"))
+    assert str(LookupFailure("a\x1bb")) == "a\\x1bb"
+    hostile = {
+        "schema_version": "1.0",
+        "families": ["evil\x1b]0;pwned\x07"],
+        "engines": [{"name": "vllm", "version": "0.30.0"}],
+        "cells": [],
+    }
+    with pytest.raises(LookupFailure) as info:
+        lookup(hostile, "evil\x1b]0;pwned\x07", engine="vllm")
+    assert "\x1b" not in str(info.value) and "\x07" not in str(info.value)
