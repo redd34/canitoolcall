@@ -6,6 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- Triage (#23): the last `transformers-other` case, `gemma4/sglang-text-around-call`, is now `transformers-gemma4-content-overwritten` (`engine_bug`): Gemma 4's `response_template` declares `content` without `repeats`/`join`, so in non-streaming the text after a call replaces the text before it. No transformers case is left untriaged.
 - The verifiers (`scripts/verify_upstream_pr.py`, `scripts/verify_compiled_pr.py`) now print the `unsupported` count on the `fixtures replayed` line, e.g. `fixtures replayed: 48 (N unsupported)`, and their JSON reports gain an `unsupported` field.
 
 ## [0.2.0] - 2026-11-15
