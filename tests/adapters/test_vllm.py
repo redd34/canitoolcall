@@ -108,7 +108,7 @@ def test_parser_map_covers_known_families_only() -> None:
 def test_unsupported_is_honest(family: str, model: str) -> None:
     sup = VllmAdapter().supports(family, model)
     assert not sup
-    assert sup.reason and "vLLM 0.30.0" in sup.reason
+    assert sup.reason and "vLLM 0.34.0" in sup.reason
 
 
 def test_module_does_not_import_vllm() -> None:
@@ -164,6 +164,132 @@ def test_parser_config_without_engine() -> None:
     assert cfg["tool_parser"] == "mistral" and cfg["reasoning_parser"] is None
     assert cfg["tokenizer"]["requested_mode"] == "mistral" and cfg["tokenizer"]["revision"] is None
     assert cfg["units_source"] == "engine tokenizer encode"
+
+
+class _FakeParser:
+    """Records what the adapter does with vLLM's composed ``Parser`` class."""
+
+    reasoning_parser_cls: Any = None
+    tool_parser_cls: Any = None
+    always_adjust_request = False
+    calls: list[tuple[str, Any]]
+
+    def __init__(self, tokenizer: Any, tools: Any, **kwargs: Any) -> None:
+        self.calls = type(self).calls
+        self.calls.append(("init", sorted(kwargs)))
+
+    def set_prompt_token_ids(self, ids: Any) -> None:
+        self.calls.append(("set_prompt_token_ids", list(ids)))
+
+    def adjust_request(self, request: Any) -> Any:
+        self.calls.append(("adjust_request", None))
+        return request
+
+    def parse(self, text: str, request: Any, **kwargs: Any) -> Any:
+        self.calls.append(("parse", text))
+        return None, None, [SimpleNamespace(name="f", arguments="{}")]
+
+
+def _fake_setup(parser_cls: Any, *, tools: list[Any] | None = None) -> Any:
+    model = SimpleNamespace(repo="org/model", tok=SimpleNamespace(), model_type=None)
+    return SimpleNamespace(
+        model=model,
+        parser_cls=parser_cls,
+        is_harmony=False,
+        tools=tools or [],
+        chat_template_kwargs={},
+        prompt_ids=[7, 8, 9],
+    )
+
+
+def _fake_engine(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stand-ins for the vLLM modules ``_request_and_parser`` imports (no engine needed)."""
+    import canitoolcall.adapters.vllm as vllm_adapter
+
+    request = SimpleNamespace(
+        tools=None,
+        tool_choice="none",
+        build_chat_params=lambda *a: SimpleNamespace(chat_template_kwargs={}),
+    )
+    modules = {
+        "vllm.entrypoints.openai.chat_completion.protocol": SimpleNamespace(ChatCompletionRequest=lambda **kw: request),
+        "vllm.utils.mistral": SimpleNamespace(
+            is_mistral_tool_parser=lambda cls: False, is_mistral_tokenizer=lambda tok: False
+        ),
+    }
+    monkeypatch.setattr(vllm_adapter, "_imp", modules.__getitem__)
+
+
+def test_adjust_request_gets_prompt_ids_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    """vLLM 0.34 OnlineRenderer.preprocess_chat: set_prompt_token_ids(prompt) before adjust_request."""
+    _fake_engine(monkeypatch)
+    cls = type("P", (_FakeParser,), {"calls": [], "reasoning_parser_cls": object})
+    VllmAdapter()._request_and_parser(_fake_setup(cls), stream=False)
+    names = [c[0] for c in cls.calls]
+    assert names.index("set_prompt_token_ids") < names.index("adjust_request")
+    assert ("set_prompt_token_ids", [7, 8, 9]) in cls.calls
+
+
+def test_always_adjust_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``Parser.always_adjust_request`` (new in 0.34) forces adjust_request even with tool_choice none."""
+    _fake_engine(monkeypatch)
+    plain = type("P", (_FakeParser,), {"calls": []})
+    VllmAdapter()._request_and_parser(_fake_setup(plain), stream=False)
+    assert ("adjust_request", None) not in plain.calls
+    always = type("A", (_FakeParser,), {"calls": [], "always_adjust_request": True})
+    VllmAdapter()._request_and_parser(_fake_setup(always), stream=False)
+    assert ("adjust_request", None) in always.calls
+
+
+def test_nonstream_parse_gets_prompt_ids(monkeypatch: pytest.MonkeyPatch) -> None:
+    """vLLM 0.34 chat_completion_full_generator: parser.set_prompt_token_ids(prompt) before parse."""
+    cls = type("P", (_FakeParser,), {"calls": []})
+    setup = _fake_setup(cls)
+    adapter = VllmAdapter()
+    monkeypatch.setattr(adapter, "_setup", lambda raw, tools: setup)
+    monkeypatch.setattr(adapter, "_request_and_parser", lambda s, stream: (None, cls(None, None)))
+    monkeypatch.setattr(adapter, "_detokenize", lambda s, r, groups: ["text"])
+    raw = ReplayInput(fixture_id="x/y", family="qwen3-hermes", model="Qwen/Qwen3-0.6B", text="", token_ids=(1,))
+    res = adapter.parse(raw, [])
+    assert res.exception is None and [c.name for c in res.tool_calls] == ["f"]
+    assert [c[0] for c in cls.calls][-2:] == ["set_prompt_token_ids", "parse"]
+    assert cls.calls[-2] == ("set_prompt_token_ids", [7, 8, 9])
+
+
+def test_get_parser_validates_against_tokenizer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """vLLM 0.34 OpenAIServingChat passes ``tokenizer=`` to ParserManager.get_parser (startup check)."""
+    import canitoolcall.adapters.vllm as vllm_adapter
+
+    seen: dict[str, Any] = {}
+
+    def get_parser(**kw: Any) -> Any:
+        seen.update(kw)
+        return _FakeParser
+
+    tok = SimpleNamespace(decode=lambda ids, skip_special_tokens: "")
+    model = SimpleNamespace(repo="Qwen/Qwen3-0.6B", tok=tok, model_type="qwen3", revision=None, requested_mode="hf")
+    monkeypatch.setattr(
+        vllm_adapter, "_imp", lambda name: SimpleNamespace(ParserManager=SimpleNamespace(get_parser=get_parser))
+    )
+    adapter = VllmAdapter()
+    monkeypatch.setattr(adapter, "_model", lambda raw: model)
+    monkeypatch.setattr(adapter, "_template_info", lambda m: {})
+    monkeypatch.setattr(adapter, "_render_prompt", lambda s: [1])
+    raw = ReplayInput(fixture_id="x/y", family="qwen3-hermes", model="Qwen/Qwen3-0.6B", text="")
+    adapter._setup(raw, [])
+    assert seen["tokenizer"] is tok
+    assert seen["tool_parser_name"] == "hermes" and seen["reasoning_parser_name"] == "qwen3"
+
+
+def test_engine_details_records_oss_harmony(monkeypatch: pytest.MonkeyPatch) -> None:
+    """vLLM 0.34 depends on ``oss-harmony`` (vllm#55128), which provides the ``openai_harmony`` module."""
+    import canitoolcall.adapters.vllm as vllm_adapter
+
+    monkeypatch.setattr(vllm_adapter, "_dist_version", lambda dist: f"v-{dist}")
+    monkeypatch.setattr(vllm_adapter, "_imp", lambda name: (_ for _ in ()).throw(ImportError(name)))
+    details = VllmAdapter().engine_details()
+    assert details["oss-harmony"] == "v-oss-harmony"
+    assert "openai-harmony" not in details
 
 
 def _delta(content: str | None = None, reasoning: str | None = None, calls: list[Any] | None = None) -> Any:

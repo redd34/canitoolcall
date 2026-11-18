@@ -123,7 +123,7 @@ The semantics are in spec/README.md ("Checks" and "Normalization policy soft-v1"
 
 | Engine | Pin | Env | Notes |
 |---|---|---|---|
-| vllm | 0.30.0 | `.venvs/vllm` (py3.12; manylinux aarch64 wheel unzipped under `.engines/vllm/`, added via `.pth`; CPU torch) | `ParserManager` path; the Harmony path uses `is_harmony`; `tokenizer_mode='mistral'` for Mistral |
+| vllm | 0.34.0 | `.venvs/vllm` (py3.12; manylinux aarch64 wheel unzipped under `.engines/vllm/`, added via `.pth`; CPU torch) | `ParserManager` path; the Harmony path uses `is_harmony`; `tokenizer_mode='mistral'` for Mistral |
 | sglang | 0.5.20 | `.venvs/sglang` (same unzip + `.pth` approach) | text-only parsers; the gpt-oss detector needs `<|call|>` |
 | llamacpp | `a25c9865` | `.engines/llamacpp/` clone + harness build (cmake, ~16 s); `.venvs/llamacpp` for `convert_hf_to_gguf.py`, plus a fallback converter env `.engines/llamacpp/convert-tf5` (llama.cpp's requirements with transformers 5.17.0) for repos whose tokenizer files the pinned transformers 4.57.6 cannot read; each GGUF's `.vocab.json` sidecar records which env built it | batch JSON-lines mode; exact vocab-GGUF detokenization; pin the template source; one token per streamed event |
 | transformers | 5.17.0 | `.venvs/transformers` | supported only where the Hub repo ships `response_template` (Gemma 4 today); one token per streamed event |
