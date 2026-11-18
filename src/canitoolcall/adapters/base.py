@@ -197,7 +197,7 @@ class Adapter(abc.ABC):
     """Base class for engine adapters. One subclass per engine module."""
 
     name: ClassVar[str]
-    """Engine name: ``vllm``, ``sglang``, ``llamacpp``, ``ollama``, ``transformers``."""
+    """Engine name: ``vllm``, ``sglang``, ``llamacpp``, ``ollama``, ``transformers``, ``mlx_lm``."""
 
     supports_text_deltas: ClassVar[bool] = False
     """True if :meth:`parse_stream_text` is implemented (enables ``char:<seed>``)."""

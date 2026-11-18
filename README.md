@@ -28,7 +28,7 @@ The same model can call tools correctly on one server and break on another. The 
 
 ```mermaid
 flowchart LR
-    M["Model<br/>writes raw text with<br/>format markers"] --> P["Inference engine's<br/>tool-call parser<br/>(vLLM, SGLang, llama.cpp,<br/>Ollama, transformers)"]
+    M["Model<br/>writes raw text with<br/>format markers"] --> P["Inference engine's<br/>tool-call parser<br/>(vLLM, SGLang, llama.cpp,<br/>Ollama, transformers, mlx-lm)"]
     P --> R["OpenAI-style response<br/>tool_calls · content ·<br/>reasoning_content"]
     R --> A["Your app or agent"]
     C(["CanIToolCall"]) -. "tests this step,<br/>offline" .-> P
@@ -80,7 +80,7 @@ flowchart TB
     F["Fixture (500 total, each with provenance)<br/>raw output · token ids · tools · expected parse"]
     F --> N["Parse once,<br/>non-streaming"]
     F --> K["Stream it, split 8 ways<br/>one · special · token · 5 seeded random"]
-    N --> P["Each engine's own parser code<br/>vLLM · SGLang · llama.cpp · Ollama · transformers<br/>pinned versions · offline · no GPU · no weights"]
+    N --> P["Each engine's own parser code<br/>vLLM · SGLang · llama.cpp · Ollama · transformers · mlx-lm<br/>pinned versions · offline · no GPU · no weights"]
     K --> P
     P --> CH["8 checks<br/>expected match · graceful errors · stream = non-stream<br/>split invariance · no marker leakage<br/>valid JSON · schema · call order"]
     CH --> RS["Results JSON per engine"]
@@ -170,7 +170,7 @@ Every fixture is parsed once without streaming and once for each **chunking stra
 - `token`: one token per delta
 - `rand:1:8` … `rand:5:8`: five seeded random groupings
 
-Each strategy is seeded, so it produces the same deltas on every machine. Multi-token strategies only count for engines whose servers can put several tokens in one delta (vLLM, SGLang). llama-server, Ollama and transformers `serve` stream one token per event, so for them only `token` counts; the others still run and are reported as synthetic.
+Each strategy is seeded, so it produces the same deltas on every machine. Multi-token strategies only count for engines whose servers can put several tokens in one delta (vLLM, SGLang). llama-server, Ollama, transformers `serve` and `mlx_lm.server` stream one token per event, so for them only `token` counts; the others still run and are reported as synthetic.
 
 A correct parser gives the same answer however the stream is split, and the same answer as without streaming:
 
@@ -211,6 +211,7 @@ A case gets the worst status over its checks: `fail` > `error` > `soft pass` > `
   | llama.cpp | `a25c9865` |
   | HF transformers | 5.17.0 |
   | Ollama | `7af39318` (built-in parsers) |
+  | mlx-lm | 0.32.2 (needs mlx: macOS arm64, or Linux through the `mlx-cpu` wheels; not in the committed snapshot yet) |
 
 - **How adapters run the parsers:**
   - Python engines: the adapter imports the engine's parser classes and calls them the way the engine's own server does.

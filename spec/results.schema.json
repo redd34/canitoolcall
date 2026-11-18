@@ -14,7 +14,7 @@
       "additionalProperties": false,
       "required": ["name", "version"],
       "properties": {
-        "name": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$", "description": "Adapter name: vllm, sglang, llamacpp, ollama, transformers, or an out-of-tree adapter's name." },
+        "name": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$", "description": "Adapter name: vllm, sglang, llamacpp, ollama, transformers, mlx_lm, or an out-of-tree adapter's name." },
         "version": { "type": "string", "description": "Version actually imported/built (e.g. 0.30.0 or a git sha)." },
         "commit": { "type": ["string", "null"] },
         "details": { "type": "object", "description": "Adapter-specific pins: key dependency versions, build flags, harness sha." }

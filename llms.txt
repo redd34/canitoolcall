@@ -1,6 +1,6 @@
 # CanIToolCall
 
-> A neutral conformance suite and public matrix for the tool-call and reasoning parsers of inference engines (vLLM, SGLang, llama.cpp, Ollama, HF transformers). It replays recorded model outputs through each engine's own parser code, offline, and checks every way of splitting the stream.
+> A neutral conformance suite and public matrix for the tool-call and reasoning parsers of inference engines (vLLM, SGLang, llama.cpp, Ollama, HF transformers, mlx-lm). It replays recorded model outputs through each engine's own parser code, offline, and checks every way of splitting the stream.
 
 Use it to answer "will this model's tool calls parse correctly on this engine?", to test a live OpenAI-compatible server, or to verify a parser fix.
 
