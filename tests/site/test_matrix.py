@@ -742,8 +742,8 @@ def test_badge_messages_and_colors() -> None:
         counts[Status.FAIL.value] = total - passes
         return Cell("fam", "eng", "1", counts, status, "2026-01-01T00:00:00Z")
 
-    ok = cell_badge(mk(Status.PASS, 87, 100))
-    assert (ok["message"], ok["color"]) == ("pass · 87/100 strict pass", "brightgreen")
+    ok = cell_badge(mk(Status.PASS, 54, 54))
+    assert (ok["message"], ok["color"]) == ("pass · 54/54 strict pass", "brightgreen")
     assert cell_badge(mk(Status.FAIL, 23, 54))["message"] == "fail · 23/54 strict pass"
     soft = cell_badge(mk(Status.SOFT_PASS, 0, 3))
     assert (soft["message"], soft["color"]) == ("soft pass · 0/3 strict pass", "yellowgreen")
