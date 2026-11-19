@@ -222,7 +222,7 @@ A case gets the worst status over its checks: `fail` > `error` > `soft pass` > `
   | Engine | Version |
   |---|---|
   | vLLM | 0.34.0 |
-  | SGLang | 0.5.20 |
+  | SGLang | 0.5.23 |
   | llama.cpp | `a25c9865` |
   | HF transformers | 5.17.0 |
   | Ollama | `7af39318` (built-in parsers) |

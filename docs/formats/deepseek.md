@@ -162,13 +162,13 @@ The V3.2, V4 and V4.1 encoders also include `parse_message_from_completion_text`
 
 ## Engine parser mapping
 
-| Sub-format | vLLM v0.34.0 tool / reasoning | SGLang v0.5.20 tool / reasoning |
+| Sub-format | vLLM v0.34.0 tool / reasoning | SGLang v0.5.23 tool / reasoning |
 |---|---|---|
 | V3 / R1 | `deepseek_v3` / `deepseek_r1` | `deepseekv3` / `deepseek-r1` |
 | V3.1 | `deepseek_v31` / `deepseek_v3` | `deepseekv31` / `deepseek-v3` |
 | V3.2 | `deepseek_v32` (`DeepSeekV32EngineToolParser`, grammar `vllm/parser/deepseek_v32.py`) / `deepseek_v3` (not stated in vLLM docs; this assumes the same `<think>` convention as V3.1) | `deepseekv32` / `deepseek-v3`, as stated in `docs/cookbook/autoregressive/DeepSeek/DeepSeek-V3_2.mdx` |
 | V4 | `deepseek_v4` / `deepseek_v4` | `deepseekv4` / `deepseek-v4` |
-| V4.1 | `deepseek_v41` / `deepseek_v41` (grammar `vllm/parser/deepseek_v41.py`: `DSML_TOOL_START = "<｜DSML｜ calls>"`) | **No V4.1 support found.** No `DSML｜ ` (spaced) string anywhere in `python/sglang/srt` at v0.5.20. The `deepseekv4` detector expects `<｜DSML｜tool_calls>`. |
+| V4.1 | `deepseek_v41` / `deepseek_v41` (grammar `vllm/parser/deepseek_v41.py`: `DSML_TOOL_START = "<｜DSML｜ calls>"`) | `deepseekv41` (`DeepSeekV41Detector`, tags ` calls`/` invoke`/` parameter` with the leading space; [`function_call_parser.py` L85](https://github.com/sgl-project/sglang/blob/297e54fd105e974cdf401e5b4d20253a22c16f90/python/sglang/srt/function_call/function_call_parser.py#L85)) / `deepseek-v41` (an alias of `DeepSeekV4Detector`, [`reasoning_parser.py` L2278](https://github.com/sgl-project/sglang/blob/297e54fd105e974cdf401e5b4d20253a22c16f90/python/sglang/srt/parser/reasoning_parser.py#L2278)). Added by [sglang#39665](https://github.com/sgl-project/sglang/pull/39665); first released in v0.5.21. v0.5.20 had none. |
 
 Other engines:
 - **llama.cpp v0.5.0:** PEG, from template. Test templates: `deepseek-ai-DeepSeek-V3.1.jinja`, `-V3.2.jinja`, `-V4.jinja`, `-V4-Flash-0731.jinja`. These are llama.cpp-authored, since there is no upstream Jinja for V3.2+.

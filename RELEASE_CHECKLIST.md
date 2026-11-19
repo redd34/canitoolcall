@@ -149,7 +149,7 @@ Order matters. Engine maintainers hear about each finding first, then the public
 These drafts are pre-filled from the committed snapshot `results/2026-09-25/` and from direct re-runs on 2026-09-26. Every "observed" value below came from running the pinned engine's own parser code. None of it was written by hand.
 
 Before filing any of them:
-1. Re-check against the engine's **latest** release or main. The pins are vLLM 0.34.0, SGLang 0.5.20, llama.cpp `a25c9865`, Ollama `7af39318` and transformers 5.17.0.
+1. Re-check against the engine's **latest** release or main. The pins are vLLM 0.34.0, SGLang 0.5.23, llama.cpp `a25c9865`, Ollama `7af39318` and transformers 5.17.0.
 2. Search the tracker for duplicates.
 3. Link fixtures as `https://github.com/redd34/canitoolcall/blob/main/fixtures/<family>/<file>.jsonl`.
 4. Where a direct repro script exists, lead with it: it uses only the engine's own API.
@@ -313,7 +313,7 @@ The shared part of every report is: "Found by canitoolcall (https://github.com/r
 - **Title:** `[Bug] Streaming tool-call parsing breaks when an argument string contains the format's own markers`
 
 #### Known upstream
-- [sglang#40739](https://github.com/sgl-project/sglang/issues/40739) (qwen3_coder drops text after a call) and [sglang#35562](https://github.com/sgl-project/sglang/issues/35562) (llama3 deletes a leading JSON object): the fixtures `qwen3-xml/bug-coder-text-after-call` and `llama/l3-bug-leading-json-object-in-content` still fail on 0.5.20. They are currently triaged in the `sglang-other` bucket. Confirm them, then comment.
+- [sglang#40739](https://github.com/sgl-project/sglang/issues/40739) (qwen3_coder drops text after a call) and [sglang#35562](https://github.com/sgl-project/sglang/issues/35562) (llama3 deletes a leading JSON object): the fixtures `qwen3-xml/bug-coder-text-after-call` and `llama/l3-bug-leading-json-object-in-content` still fail on 0.5.20 and 0.5.23. They are currently triaged in the `sglang-other` bucket. Confirm them, then comment.
 
 ### 7.3 llama.cpp (`a25c9865`)
 

@@ -106,7 +106,7 @@ The EOS list is `<|endoftext|>`, `<|user|>` and `<|observation|>`. After tool ca
 | Engine | Tool parser | Reasoning parser |
 |---|---|---|
 | vLLM v0.34.0 | `glm45` and `glm47` **both** map to `Glm47MoeModelToolParser` (grammar `vllm/parser/glm47_moe.py`). Its arg regex allows `\s*` between `</arg_key>` and `<arg_value>` and strips keys, but keeps values verbatim. `supports_required_and_named = False`. | `glm45` / `glm47` (`Glm47MoeParserReasoningAdapter`) |
-| SGLang v0.5.20 | `glm` / `glm45` → `Glm4MoeDetector` (4.5/4.6); `glm47` → `Glm47MoeDetector` (4.7/5.x) | `glm45` |
+| SGLang v0.5.23 | `glm` / `glm45` → `Glm4MoeDetector` (4.5/4.6); `glm47` → `Glm47MoeDetector` (4.7/5.x) | `glm45` |
 | llama.cpp v0.5.0 | PEG, from template. Test templates: `GLM-4.6.jinja`, `GLM-4.7-Flash.jinja` | same |
 | Ollama v0.34.4 | `glm-4.7` (also `glm46.go`) | built in |
 

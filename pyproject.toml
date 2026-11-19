@@ -42,9 +42,9 @@ dependencies = [
 # Per-engine extras. Only engines that pip can install on every platform get one.
 #   transformers: pure Python, so `pip install canitoolcall[transformers]` is a working replay env.
 #   vllm / sglang: deliberately NOT extras. Their PyPI wheels are Linux-only and pin CUDA stacks
-#     (sglang 0.5.20 even pins the pre-release cuda-tile==1.6.0rc5), so a universal lock cannot resolve
+#     (sglang 0.5.20 even pinned the pre-release cuda-tile==1.6.0rc5), so a universal lock cannot resolve
 #     them, and the adapters never import them from this env anyway. scripts/engines/<engine>.sh pins
-#     the version and builds the isolated .venvs/<engine> (vllm==0.34.0, sglang==0.5.20).
+#     the version and builds the isolated .venvs/<engine> (vllm==0.34.0, sglang==0.5.23).
 #   llamacpp / ollama: compiled harnesses (harnesses/<engine>/), built by scripts/engines/<engine>.sh.
 transformers = ["transformers==5.17.0", "jmespath>=1.0"]
 # `canitoolcall mcp`: a stdio MCP server (official SDK) for lookup, list_* and probe.

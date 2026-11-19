@@ -16,29 +16,33 @@
 # worker with PYTHONPATH=<repo>/src. Nothing here is published anywhere.
 set -euo pipefail
 
-SGLANG_VERSION=0.5.20
+SGLANG_VERSION=0.5.23
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENGINE_DIR="$ROOT/.engines/sglang"
 SRC_DIR="$ENGINE_DIR/src"
 VENV="$ROOT/.venvs/sglang"
 PY="$VENV/bin/python"
 
-# Runtime deps of the modules the adapter imports. Versions that SGLang 0.5.20
+# Runtime deps of the modules the adapter imports. Versions that SGLang 0.5.23
 # pins in its wheel METADATA (Requires-Dist ==) are used exactly: tokenizer
 # behaviour depends on them (e.g. transformers/tokenizers decode). The smoke
 # test below fails if an installed version drifts from those pins. The rest
-# were validated on 2026-09-25 (CPU torch is only imported transitively).
+# were validated on 2026-09-25 and re-checked with 0.5.23 on 2026-11-19 (CPU
+# torch is only imported transitively).
 DEPS=(
-  # pinned by sglang-0.5.20 METADATA
-  "transformers==5.12.1" "tokenizers==0.22.2" "torch==2.13.0" "xgrammar==0.2.1"
-  "openai==2.6.1" "blobfile==3.0.0" "compressed-tensors==0.18.0" "apache-tvm-ffi==0.1.11"
+  # pinned by sglang-0.5.23 METADATA
+  "transformers==5.19.0" "tokenizers==0.23.2" "torch==2.14.1" "xgrammar==0.2.7"
+  "openai==2.8.0" "blobfile==3.0.0" "compressed-tensors==0.18.0" "apache-tvm-ffi==0.1.11"
+  "sentencepiece==0.2.1"
+  # DeepSeek-V4/V4.1 prompts and output parsing (serving_deepseek_recipe.py); pinned by the METADATA
+  "deepseek-recipe==0.2.0"
   # unpinned upstream; versions validated here
   "huggingface-hub" "torchvision" "pydantic==2.13.5" "partial-json-parser==0.2.1.1.post7"
   "orjson==3.12.0" "regex==2026.9.10" "psutil==7.2.2" "pybase64==1.5.0"
   "requests==2.34.2" "pillow==12.3.0" "starlette==1.7.0" "pyzmq==27.2.0"
   "ipython==9.17.1" "aiohttp==3.14.3" "tiktoken==0.14.0" "msgspec==0.21.1"
   # needed by sglang.srt.managers.detokenizer_manager / serving_chat imports
-  "setproctitle==1.3.7" "dill==0.4.1" "gguf==0.19.0" "sentencepiece==0.2.2"
+  "setproctitle==1.3.7" "dill==0.4.1" "gguf==0.19.0"
   "fastapi==0.141.1" "uvloop==0.22.1" "uvicorn==0.54.0" "einops==0.8.2" "jsonschema==4.26.0"
   # get_tokenizer loads bare-tekken Mistral checkpoints via mistral-common (sglang: >=1.11.5)
   "mistral-common==1.12.0"
@@ -55,7 +59,8 @@ command -v uv >/dev/null || { echo "uv is required (https://docs.astral.sh/uv/)"
 mkdir -p "$ENGINE_DIR" "$ROOT/.venvs"
 
 # --- 1+2. wheel -> .engines/sglang/src ------------------------------------------
-if [ ! -f "$SRC_DIR/sglang/version.py" ]; then
+# Re-unpack when the pin changes: the dist-info directory names the version.
+if [ ! -d "$SRC_DIR/sglang-$SGLANG_VERSION.dist-info" ]; then
   read -r wheel_name wheel_url wheel_sha < <(
     curl -fsSL "https://pypi.org/pypi/sglang/$SGLANG_VERSION/json" | python3 -c '
 import json, sys
@@ -71,8 +76,8 @@ else:
   )
   # Digests committed here, so a compromised index cannot swap the wheel.
   case "$wheel_name" in
-    sglang-0.5.20-cp312-cp312-manylinux_2_34_aarch64.whl) pinned=4eeb321ff70bef7eb9643260c06f3e47a76d8a15eaefbb95e06f2681bc74b014 ;;
-    sglang-0.5.20-cp312-cp312-manylinux_2_34_x86_64.whl) pinned=ffaced7e91c3536c63077b16b08210b5c1a2f362418e9841a8767d5e019cf08a ;;
+    sglang-0.5.23-cp312-cp312-manylinux_2_34_aarch64.whl) pinned=2d538a89a6e7b1b0707e2ab7f8edef4af6a7beb5da661f9a231cddcdf5308417 ;;
+    sglang-0.5.23-cp312-cp312-manylinux_2_34_x86_64.whl) pinned=8d257a319395b322bb1be327d05e5528859358153c8563b04c0a4a3c8af164b6 ;;
     *) echo "no committed sha256 for $wheel_name" >&2; exit 1 ;;
   esac
   if [ "$pinned" != "$wheel_sha" ]; then

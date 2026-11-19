@@ -71,7 +71,7 @@ STRATEGIES = [s.id for s in DEFAULT_STRATEGIES]
 def test_registered_and_pinned() -> None:
     cls = adapter_class("sglang")
     assert cls is SglangAdapter
-    assert cls.pinned_version == "0.5.20"
+    assert cls.pinned_version == "0.5.23"
     assert cls.supports_text_deltas
 
 
@@ -79,6 +79,12 @@ def test_setup_smoke_test_hides_gpus() -> None:
     # sglang.sh's import smoke test failed with "No module named 'flashinfer'" on a host with a visible GPU.
     script = (ROOT / "scripts" / "engines" / "sglang.sh").read_text(encoding="utf-8")
     assert re.search(r'^CUDA_VISIBLE_DEVICES=-1 "\$PY" ', script, re.MULTILINE)
+
+
+def test_setup_reunpacks_when_the_pin_changes() -> None:
+    # An env built at the old pin kept its unpacked source: the guard only checked that sglang/ existed.
+    script = (ROOT / "scripts" / "engines" / "sglang.sh").read_text(encoding="utf-8")
+    assert 'if [ ! -d "$SRC_DIR/sglang-$SGLANG_VERSION.dist-info" ]; then' in script
 
 
 def test_module_does_not_import_sglang() -> None:
@@ -109,6 +115,7 @@ def test_module_does_not_import_sglang() -> None:
         ("deepseek", "deepseek-ai/DeepSeek-V3.1", "deepseekv31", "deepseek-v3"),
         ("deepseek", "deepseek-ai/DeepSeek-V3.2", "deepseekv32", "deepseek-v3"),
         ("deepseek", "deepseek-ai/DeepSeek-V4-Flash", "deepseekv4", "deepseek-v4"),
+        ("deepseek", "deepseek-ai/DeepSeek-V4.1-Flash", "deepseekv41", "deepseek-v41"),
         ("deepseek", "deepseek-ai/DeepSeek-R1-0528", "deepseekv3", "deepseek-r1"),
         ("kimi", "moonshotai/Kimi-K2-Instruct-0905", "kimi_k2", None),
         ("kimi", "moonshotai/Kimi-K2.6", "kimi_k2", "kimi_k2"),
@@ -129,12 +136,6 @@ def test_parser_mapping(family: str, model: str, tool_parser: str, reasoning_par
     assert rule is not None
     assert (rule.tool_call_parser, rule.reasoning_parser) == (tool_parser, reasoning_parser)
     assert SglangAdapter().supports(family, model)
-
-
-def test_deepseek_v41_is_unsupported() -> None:
-    sup = SglangAdapter().supports("deepseek", "deepseek-ai/DeepSeek-V4.1-Flash")
-    assert not sup
-    assert sup.reason is not None and "V4.1" in sup.reason
 
 
 @pytest.mark.parametrize(
@@ -215,7 +216,7 @@ def test_exception_text() -> None:
 
 
 # --------------------------------------------------------------------------
-# engine tests (real SGLang 0.5.20 in .venvs/sglang)
+# engine tests (real SGLang 0.5.23 in .venvs/sglang)
 # --------------------------------------------------------------------------
 
 
@@ -242,8 +243,10 @@ class Worker:
         reply: dict[str, Any] = json.loads(line)
         return reply
 
-    def replay(self, fixture: Mapping[str, Any], family: Mapping[str, Any] | None) -> dict[str, Any]:
-        reply = self.ask({"op": "replay", "fixture": fixture, "family": family, "strategies": STRATEGIES})
+    def replay(
+        self, fixture: Mapping[str, Any], family: Mapping[str, Any] | None, strategies: list[str] = STRATEGIES
+    ) -> dict[str, Any]:
+        reply = self.ask({"op": "replay", "fixture": fixture, "family": family, "strategies": strategies})
         if not reply["ok"] and any(m in reply["error"] for m in CACHE_MISS):
             pytest.skip(f"{fixture['id']}: tokenizer/config not in the HF cache (run once with HF_HUB_OFFLINE=0)")
         assert reply["ok"], reply.get("error")
@@ -276,12 +279,12 @@ def test_engine_hello(worker: Worker) -> None:
     hello = worker.ask({"op": "hello"})
     assert hello["ok"] and hello["engine"] == "sglang"
     assert hello["version"] == SglangAdapter.pinned_version
-    assert hello["details"]["deps"]["transformers"] == "5.12.1"  # sglang 0.5.20 pins it
+    assert hello["details"]["deps"]["transformers"] == "5.19.0"  # sglang 0.5.23 pins it
 
 
 @pytest.mark.engine("sglang")
 def test_engine_parser_names_exist(engine_python_for: Path) -> None:
-    """Every PARSERS name is registered in SGLang 0.5.20."""
+    """Every PARSERS name is registered in SGLang 0.5.23."""
     code = r"""
 import json
 from canitoolcall.adapters.sglang import PARSERS
@@ -334,7 +337,7 @@ def test_engine_core_sample(worker: Worker) -> None:
     assert r["nonstream"]["content"] is None
     for sid in ("token", "rand:1:8", "rand:2:8", "rand:3:8"):
         assert _calls(r["streams"][sid]) == expected, sid
-    # Observed with SGLang 0.5.20 (candidate discrepancy, untriaged): when the
+    # Observed with SGLang 0.5.20 and 0.5.23 (candidate discrepancy, untriaged): when the
     # whole output arrives in one delta, qwen25 streams only the first call's
     # name and no arguments.
     assert [c["name"] for c in r["streams"]["one"]["tool_calls"]] == ["get_weather"]
@@ -559,11 +562,32 @@ def test_engine_truncated_fixture_gets_no_stop_token(worker: Worker) -> None:
 
 
 @pytest.mark.engine("sglang")
-def test_engine_declines_deepseek_v41(worker: Worker) -> None:
-    fx, _ = _harmony_case([])
-    fx = {**fx, "id": "deepseek/v41", "family": "deepseek", "models": ["deepseek-ai/DeepSeek-V4.1-Flash"]}
-    r = worker.replay(fx, None)
-    assert r["supported"] is False and "V4.1" in r["reason"]
+@pytest.mark.parametrize(
+    ("fixture_id", "spec"), [("deepseek/v4-single-call", "dsv4"), ("deepseek/v41-parallel-two-calls", "dsv41")]
+)
+def test_engine_deepseek_v4_output_goes_through_recipe(worker: Worker, fixture_id: str, spec: str) -> None:
+    """With the deepseekv4/deepseekv41 parsers, 0.5.23 parses output token ids with deepseek-recipe
+    (serving_deepseek_recipe.py), not the text detectors."""
+    fx, fam = _corpus_fixture(fixture_id)
+    r = worker.replay(fx, fam, [*STRATEGIES, "char:0"])
+    assert r["supported"]
+    cfg = r["parser_config"]
+    assert cfg["chat_encoding_spec"] == spec
+    assert cfg["output_adapter"] == "DeepSeekRecipeChatEncodingAdapter"
+    expected = _expected_calls(fx)
+    assert _calls(r["nonstream"]) == expected
+    for sid in ("one", "token", "rand:1:8"):
+        assert _calls(r["streams"][sid]) == expected, sid
+    # The server never sees text deltas for these models: no char:<seed> result is made up.
+    assert "token ids" in (r["streams"]["char:0"]["exception"] or "")
+
+
+@pytest.mark.engine("sglang")
+def test_engine_text_parsers_have_no_output_adapter(worker: Worker) -> None:
+    fx, fam = _corpus_fixture("deepseek/v32-single-call")
+    r = worker.replay(fx, fam)
+    assert r["parser_config"]["chat_encoding_spec"] == "dsv32"
+    assert r["parser_config"]["output_adapter"] is None
 
 
 def _corpus() -> list[Any]:

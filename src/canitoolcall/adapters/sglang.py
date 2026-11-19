@@ -1,18 +1,19 @@
 """SGLang adapter: replays fixtures through SGLang's real serving-layer code.
 
 Runs inside ``.venvs/sglang`` (built by ``scripts/engines/sglang.sh``: the
-SGLang 0.5.20 cp312 manylinux wheel unzipped under ``.engines/sglang/`` and
+SGLang 0.5.23 cp312 manylinux wheel unzipped under ``.engines/sglang/`` and
 added through a ``.pth`` file). This module imports only the standard library
 at module level; every SGLang import happens inside methods.
 
-What runs is SGLang's own code, pinned to 0.5.20, in the order the OpenAI
+What runs is SGLang's own code, pinned to 0.5.23, in the order the OpenAI
 server runs it for ``/v1/chat/completions``:
 
 1. **Detokenization.** Token-id groups become text with
    ``DetokenizerManager._decode_batch_token_id_output``: SGLang's incremental
    detokenizer, which keeps a 5-token surrogate prefix, holds back incomplete
    UTF-8, and trims the matched stop token at finish (keeping ``<|call|>``
-   when the tool-call parser is ``gpt-oss``). The request's
+   when the tool-call parser is ``gpt-oss``, and the parser's tool-call
+   closing tokens, ``tool_close_token_ids``). The request's
    ``skip_special_tokens`` is decided the way ``_process_messages`` decides it:
    ``False`` when tools are present, for gpt-oss/Gemma 4, and for the parsers
    ``_patch_reasoning_skip_special_tokens`` lists.
@@ -26,7 +27,22 @@ server runs it for ``/v1/chat/completions``:
    ``_process_tool_call_stream`` per step (``parse_stream_chunk``, with
    ``parse_stream_end`` on the finishing step), then
    ``_check_for_unstreamed_tool_args``. The SSE chunks the server would send
-   are decoded and accumulated OpenAI-client style.
+   are decoded and accumulated OpenAI-client style. Tool parsing is skipped
+   once ``_answer_started`` (only response-template reasoning parsers set it).
+
+**Chat encoding output adapters.** When ``_build_chat_encoding_adapter`` gives
+the serving layer an output adapter (0.5.23: the ``deepseekv4``/``deepseekv41``
+parsers, via ``serving_deepseek_recipe.py``), the server skips steps 2 and 3:
+the output token ids go to ``parse_chat_response`` (non-streaming) or
+``stream_chat_chunks`` per step (streaming). Those models have no text-delta
+path, so ``char:<seed>`` replays return an exception instead of a parse. The
+default ``ServerArgs`` are published (``override_server_args``) because
+``stream_chat_chunks`` reads ``incremental_streaming_output`` from them.
+
+None of the parsers mapped here is a response-template parser, so the
+response-template request configuration and stop settling
+(``configure_response_template_request``, ``_settle_response_template_stop``)
+never apply and are not called.
 
 The serving methods are called on an ``OpenAIServingChat`` built with
 ``object.__new__``. Only the attributes those methods read are set: the parser
@@ -90,7 +106,7 @@ class ParserRule:
 PARSERS: dict[str, tuple[ParserRule, ...]] = {
     # First matching rule wins. Every name is checked against
     # FunctionCallParser.ToolCallParserEnum / ReasoningParser.DetectorMap of
-    # SGLang 0.5.20 by tests/adapters/test_sglang.py.
+    # SGLang 0.5.23 by tests/adapters/test_sglang.py.
     "qwen3-hermes": (
         # qwen25 == the "qwen" detector SGLang's template auto-detection picks.
         ParserRule("Qwen2.5", "qwen25", None),
@@ -103,13 +119,7 @@ PARSERS: dict[str, tuple[ParserRule, ...]] = {
     ),
     "gpt-oss": (ParserRule("*", "gpt-oss", "gpt-oss"),),
     "deepseek": (
-        ParserRule(
-            "DeepSeek-V4.1",
-            None,
-            None,
-            "SGLang 0.5.20 has no DeepSeek-V4.1 parser: V4.1's spaced DSML markers ('DSML' + U+FF5C + ' calls') "
-            "appear nowhere in sglang/srt; the deepseekv4 detector only knows V4's 'DSML' + U+FF5C + 'tool_calls'",
-        ),
+        ParserRule("DeepSeek-V4.1", "deepseekv41", "deepseek-v41"),  # sglang#39665, first released in 0.5.21
         ParserRule("DeepSeek-V4", "deepseekv4", "deepseek-v4"),
         ParserRule("DeepSeek-V3.2", "deepseekv32", "deepseek-v3"),
         ParserRule("DeepSeek-V3.1", "deepseekv31", "deepseek-v3"),
@@ -148,6 +158,12 @@ PARSERS: dict[str, tuple[ParserRule, ...]] = {
 HARMONY_CALL = "<|call|>"
 HARMONY_RETURN = "<|return|>"
 REQUEST_ID = "chatcmpl-canitoolcall-replay"
+CREATED = 0
+"""``created`` of every SSE chunk (the server stamps ``int(time.time())`` once per request)."""
+NO_TEXT_DELTAS = (
+    "NotApplicable: SGLang parses this model's output from token ids (chat encoding output adapter); "
+    "the server has no text-delta path"
+)
 
 
 def resolve_parsers(family: str, model: str) -> ParserRule | None:
@@ -257,7 +273,7 @@ class _Replay:
 
 class SglangAdapter(Adapter):
     name: ClassVar[str] = "sglang"
-    pinned_version: ClassVar[str] = "0.5.20"
+    pinned_version: ClassVar[str] = "0.5.23"
     supports_text_deltas: ClassVar[bool] = True
 
     def __init__(self) -> None:
@@ -265,6 +281,8 @@ class SglangAdapter(Adapter):
         self._tools: dict[str, list[dict[str, Any]]] = {}
         """Tools of the latest replay per fixture id (``parser_config`` gets no tools)."""
         self._tails: dict[tuple[str, str], tuple[list[int], str]] = {}
+        self._encoding_adapters: dict[tuple[str, str, str | None, ParserRule], Any] = {}
+        self._server_args_published = False
 
     # ------------------------------------------------------------------ identity
 
@@ -377,6 +395,7 @@ class SglangAdapter(Adapter):
             "template_force_reasoning": ctx.force_reasoning,
             "template_reasoning_config": repr(ctx.reasoning_config) if ctx.reasoning_config is not None else None,
             "chat_encoding_spec": srv.chat_encoding_spec,
+            "output_adapter": type(srv._encoding_output()).__name__ if srv._encoding_output() else None,
             "thinking": raw.thinking,
             "chat_template_kwargs": req.chat_template_kwargs,
             "reasoning_effort": req.reasoning_effort,
@@ -406,7 +425,7 @@ class SglangAdapter(Adapter):
         steps = [self.units(raw) + ([rp.stop.token_id] if rp.stop.appended and rp.stop.token_id is not None else [])]
         try:
             (text,) = self._detokenize(rp, steps)
-            return self._nonstream(rp, text)
+            return self._nonstream(rp, text, steps[0])
         except Exception as e:  # engine outcome (rule 6)
             return ParseResult(exception=exception_text(e))
 
@@ -418,7 +437,7 @@ class SglangAdapter(Adapter):
         acc = StreamAccumulator()
         try:
             deltas = self._detokenize(rp, steps)
-            asyncio.run(self._stream(rp, deltas, acc))
+            asyncio.run(self._stream(rp, deltas, acc, steps))
         except Exception as e:  # engine outcome (rule 6)
             return acc.result(exception=exception_text(e))
         return acc.result()
@@ -430,6 +449,8 @@ class SglangAdapter(Adapter):
         appended to the last delta, as the detokenizer would have emitted it.
         """
         rp = self._replay(raw, tools, stream=True)
+        if rp.serving._encoding_output() is not None:
+            return ParseResult(exception=NO_TEXT_DELTAS)
         texts = list(deltas) or [""]
         kept = self._kept_stop_ids(rp)
         if kept:
@@ -521,7 +542,7 @@ class SglangAdapter(Adapter):
         srv.default_chat_template_kwargs = {}
         hf_config = ctx.hf_config or SimpleNamespace(architectures=None, model_type=None)
         srv.tokenizer_manager = SimpleNamespace(
-            tokenizer=ctx.tokenizer, model_config=SimpleNamespace(hf_config=hf_config)
+            tokenizer=ctx.tokenizer, model_config=SimpleNamespace(hf_config=hf_config), model_path=ctx.model
         )
         srv.template_manager = SimpleNamespace(
             force_reasoning=ctx.force_reasoning, reasoning_config=ctx.reasoning_config
@@ -537,7 +558,19 @@ class SglangAdapter(Adapter):
         srv.is_gpt_oss = hf_config.model_type == "gpt_oss"
         srv.is_gemma4 = hf_config.model_type in ("gemma4", "gemma4_unified")
         srv.chat_encoding_spec = srv._resolve_chat_encoding_spec()
+        key = (ctx.model, ctx.tokenizer_repo, ctx.tokenizer_revision, rule)
+        if key not in self._encoding_adapters:
+            # As OpenAIServingChat.__init__; recipe adapters encode a prompt at build time, so build once.
+            self._publish_server_args()
+            self._encoding_adapters[key] = srv._build_chat_encoding_adapter()
+        srv._encoding_adapter = self._encoding_adapters[key]
         return srv
+
+    def _publish_server_args(self) -> None:
+        """Publish SGLang's default ``ServerArgs``, as a server started without flags has them."""
+        if not self._server_args_published:
+            _mod("sglang.srt.runtime_context").get_context().override_server_args().install()
+            self._server_args_published = True
 
     def _replay(self, raw: ReplayInput, tools: Sequence[ToolSpec] | None, stream: bool) -> _Replay:
         rule = resolve_parsers(raw.family, raw.model)
@@ -663,6 +696,9 @@ class SglangAdapter(Adapter):
         d.decode_status = {}
         d.disable_tokenizer_batch_decode = False  # server default
         d.is_tool_call_parser_gpt_oss = rp.rule.tool_call_parser == "gpt-oss"
+        d.tool_close_token_ids = _mod("sglang.srt.parser.response_template").tool_close_token_ids(
+            rp.rule.tool_call_parser, tok
+        )
         return d
 
     def _detokenize(self, rp: _Replay, steps: Sequence[Sequence[int]]) -> list[str]:
@@ -703,11 +739,22 @@ class SglangAdapter(Adapter):
         return [int(i) for i in kept]
 
     @staticmethod
-    def _nonstream(rp: _Replay, text: str) -> ParseResult:
+    def _nonstream(rp: _Replay, text: str, output_ids: list[int]) -> ParseResult:
         """``OpenAIServingChat._build_chat_response`` for one choice."""
         srv, req = rp.serving, rp.request
         rpm = _mod("sglang.srt.parser.reasoning_parser")
+        encoding_output = srv._encoding_output()
+        if encoding_output is not None:
+            reasoning, content, tool_calls, _ = encoding_output.parse_chat_response(
+                request=req, output_ids=output_ids, finish_reason=rp.stop.finish_reason()
+            )
+            return ParseResult(
+                content=content or None,
+                reasoning_content=reasoning or None,
+                tool_calls=tuple(ParsedToolCall(tc.function.name, tc.function.arguments) for tc in tool_calls or ()),
+            )
         reasoning_text = None
+        answer_started = False
         if srv.reasoning_parser and req.separate_reasoning:
             force_reasoning = srv.template_manager.force_reasoning or srv._get_reasoning_from_request(req)
             parser = rpm.ReasoningParser(
@@ -719,8 +766,9 @@ class SglangAdapter(Adapter):
                 tool_call_parser_active=srv._tool_call_parsing_active(req),
             )
             reasoning_text, text = parser.parse_non_stream(text)
+            answer_started = srv._answer_started(parser)
         calls: tuple[ParsedToolCall, ...] = ()
-        if srv._tool_call_parsing_active(req):
+        if srv._tool_call_parsing_active(req) and not answer_started:
             tool_calls, text, _ = srv._process_tool_calls(
                 text,
                 srv._effective_tools(req),
@@ -732,30 +780,59 @@ class SglangAdapter(Adapter):
         return ParseResult(content=text or None, reasoning_content=reasoning_text or None, tool_calls=calls)
 
     @staticmethod
-    async def _stream(rp: _Replay, deltas: Sequence[str], acc: StreamAccumulator) -> None:
+    async def _stream(
+        rp: _Replay, deltas: Sequence[str], acc: StreamAccumulator, steps: Sequence[Sequence[int]] = ()
+    ) -> None:
         """``OpenAIServingChat._generate_stream_content`` over each step, for choice 0."""
         srv, req = rp.serving, rp.request
         reasoning_parsers: dict[int, Any] = {}
         tool_parsers: dict[int, Any] = {}
         has_tool_calls: dict[int, bool] = {}
-        content: dict[str, Any] = {"meta_info": {"id": REQUEST_ID}, "text": ""}
+        content: dict[str, Any] = {"meta_info": {"id": REQUEST_ID}, "text": "", "output_ids": []}
+        encoding_output = srv._encoding_output()
         for i, step_text in enumerate(deltas):
             finish_type = rp.stop.finish_type if i == len(deltas) - 1 else None
             content["text"] += step_text
+            if encoding_output is not None:
+                # Non-incremental streaming (the default): output_ids is the whole output so far.
+                content["output_ids"] = [*content["output_ids"], *steps[i]]
+                content["meta_info"]["completion_tokens"] = len(content["output_ids"])
+                content["meta_info"]["finish_reason"] = rp.stop.finish_reason() if finish_type else None
+                for chunk in encoding_output.stream_chat_chunks(
+                    content=content,
+                    index=0,
+                    request=req,
+                    created=CREATED,
+                    parser_dict=tool_parsers,
+                    has_tool_calls=has_tool_calls,
+                    choice_logprobs=None,
+                    finish_reason_type=finish_type,
+                    usage=None,
+                ):
+                    acc.add_sse(chunk)
+                continue
             delta: Any = step_text
             if srv.reasoning_parser and req.separate_reasoning:
                 reasoning_text, delta = srv._process_reasoning_stream(
                     0, delta, reasoning_parsers, content, req, finish_type
                 )
                 acc.add_reasoning(reasoning_text)
-            if srv._tool_call_parsing_active(req):
+            if srv._tool_call_parsing_active(req) and not srv._answer_started(reasoning_parsers.get(0)):
                 async for chunk in srv._process_tool_call_stream(
-                    0, delta, tool_parsers, content, req, has_tool_calls, False, flush=finish_type is not None
+                    0,
+                    delta,
+                    tool_parsers,
+                    content,
+                    req,
+                    has_tool_calls,
+                    created=CREATED,
+                    continuous_usage_stats=False,
+                    flush=finish_type is not None,
                 ):
                     if chunk:
                         acc.add_sse(chunk)
                 if finish_type is not None and 0 in tool_parsers:
-                    remaining = srv._check_for_unstreamed_tool_args(tool_parsers[0], content, req, 0)
+                    remaining = srv._check_for_unstreamed_tool_args(tool_parsers[0], content, req, 0, created=CREATED)
                     if remaining:
                         acc.add_sse(remaining)
             else:

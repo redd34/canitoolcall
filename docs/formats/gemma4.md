@@ -82,7 +82,7 @@ The asymmetric `<|x>` / `<x|>` open/close style is unique to Gemma 4. **The stri
 | Engine | Tool parser | Reasoning parser |
 |---|---|---|
 | vLLM v0.34.0 | `gemma4` (`Gemma4EngineToolParser`, grammar `vllm/parser/gemma4.py`: `TOOL_CALL_START = "<\|tool_call>"`, `STRING_DELIM = '<\|"\|>'`) | `gemma4` (`Gemma4ParserReasoningAdapter`) |
-| SGLang v0.5.20 | `gemma4` (`Gemma4Detector`) | `gemma4` |
+| SGLang v0.5.23 | `gemma4` (`Gemma4Detector`) | `gemma4` |
 | llama.cpp v0.5.0 | dedicated `COMMON_CHAT_FORMAT_PEG_GEMMA4`. Test templates: `google-gemma-4-31B-it.jinja`, `google-gemma-4-31B-it-interleaved.jinja` | same |
 | Ollama v0.34.4 | `gemma4`, `gemma4-no-thinking` | built in |
 

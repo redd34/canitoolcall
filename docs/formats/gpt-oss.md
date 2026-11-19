@@ -80,7 +80,7 @@ The spec's own examples also differ in spacing before `<|constrain|>`. One has `
 | Engine | Tool parser | Reasoning parser | Notes |
 |---|---|---|---|
 | vLLM v0.34.0 | `openai` (`GptOssToolParser`, `vllm/tool_parsers/gptoss_tool_parser.py`, which its docstring calls a "Stub tool parser"; the real parsing is in `vllm/parser/harmony.py`) | `openai_gptoss` (`GptOssReasoningParser`) | `vllm/parser/harmony.py` wraps the `openai_harmony` `StreamableParser`. Since vllm#55128 that module comes from the `oss-harmony` fork (>=0.0.11), not `openai-harmony` |
-| SGLang v0.5.20 | `gpt-oss` (`GptOssDetector`, bot token `"<\|start\|>assistant<\|channel\|>commentary"`, eot `"<\|call\|>"`) | `gpt-oss` | From reading the source, the extract regex is `to=([a-zA-Z_][a-zA-Z0-9_.-]*)\s*<\|constrain\|>json<\|message\|>(.*?)(?:<\|call\|>\|$)`. It requires a channel-section recipient and the literal `<\|constrain\|>json`. Whether the role-section and ` json` variants are handled elsewhere is **not verified by running**. |
+| SGLang v0.5.23 | `gpt-oss` (`GptOssDetector`, bot token `"<\|start\|>assistant<\|channel\|>commentary"`, eot `"<\|call\|>"`) | `gpt-oss` | From reading the source, the extract regex is `to=([a-zA-Z_][a-zA-Z0-9_.-]*)\s*<\|constrain\|>json<\|message\|>(.*?)(?:<\|call\|>\|$)`. It requires a channel-section recipient and the literal `<\|constrain\|>json`. Whether the role-section and ` json` variants are handled elsewhere is **not verified by running**. |
 | llama.cpp v0.5.0 | PEG, from template. Test template: `models/templates/openai-gpt-oss-120b.jinja` | same | |
 | Ollama v0.34.4 | `harmony` (top-level `harmony/` package) | built in | |
 

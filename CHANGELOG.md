@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- SGLang replays DeepSeek-V4.1 (issue #7): `deepseekv41` / `deepseek-v41` ([sglang#39665](https://github.com/sgl-project/sglang/pull/39665), first released in 0.5.21). The 22 `deepseek` V4.1 fixtures were `unsupported` on 0.5.20; on 0.5.23 19 pass and 3 truncated ones fail by the truncation policy.
+
+### Changed
+
+- SGLang pin bumped from 0.5.20 to 0.5.23 (`scripts/engines/sglang.sh`, adapter, docs). No parser name the adapter uses was renamed or removed. With `deepseekv4`/`deepseekv41`, 0.5.23 parses output token ids through deepseek-recipe (`serving_deepseek_recipe.py`) instead of the text detectors, and the adapter follows it (`parse_chat_response`, `stream_chat_chunks`; those models get no `char:*` result). It also follows the new `_process_tool_call_stream`/`_check_for_unstreamed_tool_args` signatures, `_answer_started` and the detokenizer's `tool_close_token_ids`. The env gets SGLang 0.5.23's pins (transformers 5.19.0, tokenizers 0.23.2, torch 2.14.1, xgrammar 0.2.7, openai 2.8.0, sentencepiece 0.2.1, deepseek-recipe 0.2.0), and `sglang.sh` re-unpacks the wheel when the pin changes (it used to keep an older unpacked source). Full replay: every non-DeepSeek case is unchanged; DeepSeek V3.2/V4 go from 23 soft passes to passes and 2 fails to passes. The committed snapshot is unchanged.
+
 ## [0.3.0] - 2026-11-19
 
 Ask the matrix without a checkout (`lookup`, a versioned `matrix.json`, an MCP server, badges), probe the Responses API

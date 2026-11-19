@@ -86,7 +86,7 @@ Each rule was found by the spike **breaking without it**:
 6. **Engine exceptions are outcomes.** Catch them and return `ParseResult(exception="Type: msg")`. Raise only for harness problems; the runner records those as `error`.
 7. **Pin everything.** `parser_config(raw)` records the tool/reasoning parser names, template source + sha256, `enable_thinking`/`reasoning_format`, tokenizer mode and repo@revision. For llama.cpp, the template **source** matters: the current HF DeepSeek-V3.1 template fails where llama.cpp's own `models/templates/` copy works.
 8. **Stream accumulation** is OpenAI-client style. Concatenate content and reasoning deltas, and merge tool-call deltas by `index`: argument fragments are concatenated into `arguments_raw`. The name comes from the first delta that carries it. If an engine sends the name again in later deltas, adapters follow openai-python's `accumulate_delta`, which concatenates the fragments, so a repeated name shows up in results the way a real client would see it.
-9. **`supports(family, model)` is honest and cheap.** If the engine has no parser for a model version (for example, SGLang 0.5.20 has none for DeepSeek-V4.1), return `Support(False, reason)`. The runner reports `unsupported`.
+9. **`supports(family, model)` is honest and cheap.** If the engine has no parser for a model version (for example, SGLang 0.5.20 had none for DeepSeek-V4.1), return `Support(False, reason)`. The runner reports `unsupported`.
 10. **Offline by default.** Tokenizers and templates are fetched once into the HF cache at pinned revisions (config and tokenizer files only, never weights). Tests set `HF_HUB_OFFLINE=1` when the cache is warm. Full runs should pass `--env HF_HUB_OFFLINE=1` too: some tokenizer paths (vLLM's Mistral mode) list repo files over the network even at a pinned revision, and bulk runs then hit Hub rate limits.
 
 ### Per-replay conditions (issue #9)
@@ -126,7 +126,7 @@ The semantics are in spec/README.md ("Checks" and "Normalization policy soft-v1"
 | Engine | Pin | Env | Notes |
 |---|---|---|---|
 | vllm | 0.34.0 | `.venvs/vllm` (py3.12; manylinux aarch64 wheel unzipped under `.engines/vllm/`, added via `.pth`; CPU torch) | `ParserManager` path; the Harmony path uses `is_harmony`; `tokenizer_mode='mistral'` for Mistral |
-| sglang | 0.5.20 | `.venvs/sglang` (same unzip + `.pth` approach) | text-only parsers; the gpt-oss detector needs `<|call|>` |
+| sglang | 0.5.23 | `.venvs/sglang` (same unzip + `.pth` approach) | text parsers, except DeepSeek-V4/V4.1, whose output token ids go through deepseek-recipe (`serving_deepseek_recipe.py`; no `char:*` path); the gpt-oss detector needs `<|call|>` |
 | llamacpp | `a25c9865` | `.engines/llamacpp/` clone + harness build (cmake, ~16 s); `.venvs/llamacpp` for `convert_hf_to_gguf.py`, plus a fallback converter env `.engines/llamacpp/convert-tf5` (llama.cpp's requirements with transformers 5.17.0) for repos whose tokenizer files the pinned transformers 4.57.6 cannot read; each GGUF's `.vocab.json` sidecar records which env built it | batch JSON-lines mode; exact vocab-GGUF detokenization; pin the template source; one token per streamed event |
 | transformers | 5.17.0 | `.venvs/transformers` | supported only where the Hub repo ships `response_template` (Gemma 4 today); one token per streamed event |
 | ollama | `7af39318` | `.engines/ollama/` clone + `go build` (Go version from Ollama's `go.mod`, via `GOTOOLCHAIN`) | built-in parsers only (the legacy `tools.NewParser` path is not covered); reuses the vocab GGUFs; one token per streamed event |

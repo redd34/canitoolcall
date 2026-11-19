@@ -78,7 +78,7 @@ Because the tool and think markers are non-special added tokens, they are single
 | Engine | Tool parser | Reasoning parser | Notes |
 |---|---|---|---|
 | vLLM v0.34.0 | `hermes` (`vllm/tool_parsers/hermes_tool_parser.py`, `Hermes2ProToolParser`); the new name `qwen3_json` is an alias of the same class (its registry comment marks a dedicated parser as TODO) | `qwen3` (`Qwen3ParserReasoningAdapter`); `deepseek_r1` also works for Thinking-2507, where there is no opening tag | The Qwen3-8B model card mentions `--reasoning-parser qwen3` and `deepseek_r1` |
-| SGLang v0.5.20 | `qwen25` / `qwen` (`Qwen25Detector`, bot token `"<tool_call>\n"`, eot `"\n</tool_call>"`); `hermes` (`HermesDetector`, bot `"<tool_call>"`) | `qwen3`, `qwen3-thinking` (`Qwen3Detector`) | `qwen25` hard-codes the newlines from the template |
+| SGLang v0.5.23 | `qwen25` / `qwen` (`Qwen25Detector`, bot token `"<tool_call>\n"`, eot `"\n</tool_call>"`); `hermes` (`HermesDetector`, bot `"<tool_call>"`) | `qwen3`, `qwen3-thinking` (`Qwen3Detector`) | `qwen25` hard-codes the newlines from the template |
 | llama.cpp v0.5.0 | Automatic, from template (PEG). Test template: `models/templates/Qwen-Qwen3-0.6B.jinja` | same | |
 | Ollama v0.34.4 | `qwen3`, `qwen3-thinking` | built in | |
 
