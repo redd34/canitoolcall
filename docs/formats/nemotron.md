@@ -8,8 +8,14 @@
 
 All five are `NemotronHForCausalLM` (`model_type: nemotron_h`) and share one vocabulary. **Not covered:**
 NVIDIA-Nemotron-3.5-Bolt (`Gemma4ForConditionalGeneration`, a Gemma 4 style `<|tool_call>call:NAME{…}<tool_call|>`
-template; see [`gemma4.md`](gemma4.md)), the image-text NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (template not checked),
-and the earlier Nemotron Nano v2 (`<TOOLCALL>` JSON).
+template; see [`gemma4.md`](gemma4.md)), the image-text NVIDIA-Nemotron-3.5-Super-VL-120B-A12B and
+Nemotron-3-Nano-Omni-30B-A3B-Reasoning, the `-Base-BF16` and `-GenRM` repos, the FP8/NVFP4/GGUF quantizations
+(templates not checked), and the earlier Nemotron Nano v2 (`<TOOLCALL>` JSON).
+
+**Adapter scope.** The vLLM, SGLang and Ollama rules name only the five BF16 repos above, so every other repo id is
+reported `unsupported` (no mapping) rather than assumed to share a template. vLLM and Ollama match the repo name to
+its end (`…-BF16$`); SGLang's rules are case-insensitive substrings, so an id that extends one of the five (such as
+`NVIDIA-Nemotron-3-Super-120B-A12B-BF16-MTPv2`) also matches there.
 
 **Why a family of its own.** The tool-call block is exactly the Qwen3-Coder XML format of [`qwen3-xml`](qwen3-xml.md),
 and every engine reuses its Qwen3-Coder tool parser. The reasoning framing is not Qwen's (`</think>\n` vs
@@ -99,6 +105,23 @@ Summarize.</think>It is 20 °C.<|im_end|>
 Nemotron-3-Ultra-550B-A55B renders like Lightning. Its template only adds a `medium_effort` kwarg (appends
 `{reasoning effort: efficient}`).
 
+**Where the shapes come from.** These are how each template serializes an assistant turn from history, which is what
+the fixtures render; they are not observations of generated text. The Nemotron 3 templates build the turn as
+`"<think>\n" ~ reasoning_content ~ "\n</think>\n" ~ content`
+([Nano-4B #L108](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16/blob/dfaf35de3e30f1867dd8dbc38a7fc9fb52d3914f/chat_template.jinja#L108),
+[Super #L109](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16/blob/2dc98e2afe4face0e4ce40972a915c45368bd34a/chat_template.jinja#L109)),
+the 3.5-generation templates as `"<think>\n" ~ reasoning_content ~ "</think>" ~ content`
+([Lightning #L100](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16/blob/a9904d24bcc1d289a1950fa9d2b978c47cf903b9/chat_template.jinja#L100),
+[Ultra #L101](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16/blob/77df655d5e9f8362164ed14dd8b48f8bce657498/chat_template.jinja#L101)).
+A tool-calling turn then writes `(content | trim) ~ '\n'` before the first `<tool_call>`
+([Nano-4B #L126](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16/blob/dfaf35de3e30f1867dd8dbc38a7fc9fb52d3914f/chat_template.jinja#L126),
+[Lightning #L116](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16/blob/a9904d24bcc1d289a1950fa9d2b978c47cf903b9/chat_template.jinja#L116)),
+so both variants have `</think>\n<tool_call>`; an answer turn writes `content | trim`
+([Nano-4B #L162](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16/blob/dfaf35de3e30f1867dd8dbc38a7fc9fb52d3914f/chat_template.jinja#L162),
+[Lightning #L149](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16/blob/a9904d24bcc1d289a1950fa9d2b978c47cf903b9/chat_template.jinja#L149)),
+which keeps 3's `</think>\n` and 3.5's bare `</think>` before the answer. What the models actually generate may
+differ (see vllm#62078 below for one reported difference).
+
 | Variant (`family.json`) | Repos | Reasoning before a call | Reasoning before an answer |
 |---|---|---|---|
 | `nemotron-3` | Nano-4B, Nano-30B-A3B, Super-120B-A12B | `R\n</think>\n<tool_call>` | `R\n</think>\nANSWER` |
@@ -170,15 +193,35 @@ llama.cpp ships the Nano template as
 
 ## Known edge cases
 
-No public engine issue specific to Nemotron 3 tool calls was found (GitHub search of the four engine repos,
-2026-11-19). The tool-call parsers are the Qwen3-Coder ones, so the `qwen3-xml` edge cases apply. Replays of this
-corpus at the pins (vLLM 0.30.0 and SGLang 0.5.20, 2026-11-19, macOS arm64) show:
+Open engine issues that name Nemotron 3 / 3.5 (read 2026-11-19):
+- [vllm-project/vllm#62078](https://github.com/vllm-project/vllm/issues/62078) (open since 2026-10-16, reported on
+  vLLM 0.31.0 with NVIDIA-Nemotron-3.5-Lightning-30B-A3B and 3.5-Super-VL, `--tool-call-parser qwen3_coder
+  --reasoning-parser nemotron_v3`): a string value that ends in a newline loses it. The template writes the value and
+  then `\n</parameter>`, so a value's own trailing `\n` and the wrapper `\n` are adjacent, and the report says the
+  models **generate** only one of them. The parser strips exactly one leading and one trailing newline
+  (`_trim_wrapping_newlines`, present at the pin:
+  [`vllm/parser/qwen3.py#L60-L66`](https://github.com/vllm-project/vllm/blob/ced6857afa0ea7b2e3f0846a62e1394e90f15607/vllm/parser/qwen3.py#L60-L66)),
+  which is correct for the template's own rendering. The issue proposes a template change plus a no-trim converter.
+  The `*-trailing-newline-string` fixtures are the template-rendered form (two newlines, recoverable); there is no
+  `bug_report` fixture, because the issue quotes the parsed arguments, not the raw model output.
+- [vllm-project/vllm#49412](https://github.com/vllm-project/vllm/issues/49412) (open since 2026-07-22): streaming and
+  non-streaming return different `content` whitespace at tool-call boundaries for the ParserEngine parsers, naming
+  `nemotron_v3` (it subclasses the Qwen3 parser). The non-streaming path strips content when tools are called; the
+  streaming path does not. This is the same boundary whitespace the `soft_pass` rows below report.
+- [vllm-project/vllm#39103](https://github.com/vllm-project/vllm/issues/39103) (open since 2026-04-06, Nemotron-3-Super
+  NVFP4): adding `--reasoning-config` with `--reasoning-parser nemotron_v3` returns every response as reasoning
+  (`content: null`). The suite does not pass `--reasoning-config`, so the replays do not exercise it.
+
+The tool-call parsers are the Qwen3-Coder ones, so the [`qwen3-xml`](qwen3-xml.md) edge cases apply too. Replays of
+this corpus at the pins (vLLM 0.30.0 and SGLang 0.5.20, 2026-11-19, macOS arm64; 33 fixtures: vLLM `pass=19 soft_pass=3 fail=11`, SGLang
+`pass=3 soft_pass=19 fail=11`) show:
 
 | Fixture | Observation |
 |---|---|
 | `*-python-literals` | vLLM and SGLang return `"None"` (a string) for an `["integer", "null"]` parameter rendered as `None`; `False` is coerced correctly |
 | `*-marker-in-arguments` | both split the value at `<parameter=KEY>` inside it (a phantom `KEY` argument). SGLang's per-token stream also re-enters reasoning at the literal `<think>` in the value |
-| `*-truncated-*`, `v3-truncated-second-parallel-call` | both return the unfinished call (the `truncated-call-returned` policy finding of [`recovery.md`](recovery.md) §2) |
+| every `*-truncated-*` cut inside or after a call (all but `v3-truncated-in-reasoning`, both variants) | both return the unfinished call (the `truncated-call-returned` policy finding of [`recovery.md`](recovery.md) §2) |
+| `*-trailing-newline-string` | both return `alpha\n\nomega\n` (one wrapper newline stripped; the rendered form of the vllm#62078 value is recovered) |
 | reasoning / content whitespace | SGLang keeps the `\n` before `</think>` and returns the `\n` markup after the calls as content (`soft_pass`); vLLM's `nemotron_v3` strips the trailing reasoning newline |
 
 ## Fixtures (`fixtures/nemotron/`)

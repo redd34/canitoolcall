@@ -17,7 +17,7 @@ These notes are the reference for writing fixtures. Every rendered example in th
 | [`llama`](llama.md) | Llama 3.1, 3.2, 3.3 and 4 | Llama-3.1-8B, 3.2-1B/3B, 3.3-70B, Llama-4-Scout/Maverick | 3.1/3.3: bare JSON `{"name":…, "parameters":…}`; 3.2/4: pythonic `[f(a=1)]` |
 | [`mistral`](mistral.md) | Mistral, Magistral, Devstral, Ministral | Mistral-Small-4, Mistral-Medium-3.5, Ministral-3, Devstral-2, Magistral-2509, Mistral-Small-3.2 | depends on tokenizer version: `[TOOL_CALLS][{…}]` (v3/v7), `[TOOL_CALLS]NAME[CALL_ID]ID[ARGS]{…}` (v11), `[TOOL_CALLS]NAME[ARGS]{…}` (v13+) |
 | [`gemma4`](gemma4.md) | Gemma 4 (and a note on Gemma 3) | gemma-4-31B-it, 26B-A4B-it, 12B-it, E4B/E2B-it | `<\|tool_call>call:NAME{key:<\|"\|>str<\|"\|>,n:3}<tool_call\|>`: **not JSON** |
-| [`nemotron`](nemotron.md) | NVIDIA Nemotron 3 and 3.5 (added 2026-11-19) | Nemotron-3-Nano-4B, 3-Nano-30B-A3B, 3-Super-120B-A12B, 3.5-Lightning-30B-A3B, 3-Ultra-550B-A55B | the `qwen3-xml` call block (`<tool_call>\n<function=NAME>\n<parameter=K>\nV\n</parameter>…`) + `<think>` pre-filled, closed by `\n</think>\n` (3) or `</think>\n` (3.5) |
+| [`nemotron`](nemotron.md) | NVIDIA Nemotron 3 and 3.5 (added 2026-11-19) | Nemotron-3-Nano-4B, 3-Nano-30B-A3B, 3-Super-120B-A12B, 3.5-Lightning-30B-A3B, 3-Ultra-550B-A55B | the `qwen3-xml` call block (`<tool_call>\n<function=NAME>\n<parameter=K>\nV\n</parameter>…`) + `<think>` pre-filled; before a call it closes with `\n</think>\n` (3) or `</think>\n` (3.5), before an answer with `\n</think>\n` (3) or a bare `</think>` (3.5) |
 
 Cross-family rules for malformed and truncated output are in [`recovery.md`](recovery.md) (proposed, [#36](https://github.com/redd34/canitoolcall/issues/36)).
 

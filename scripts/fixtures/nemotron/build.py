@@ -288,7 +288,7 @@ CASES: list[Case] = [
                 call("get_weather", {"city": "Lima", "unit": "fahrenheit"}),
             ],
         ),
-        ("v3",),
+        BOTH,
     ),
     Case(
         "no-call",
@@ -398,10 +398,23 @@ CASES: list[Case] = [
                 )
             ],
         ),
-        ("v3",),
+        BOTH,
         notes="String values are written raw (real newlines, tab, quotes, backslashes) between the wrapping "
         "newlines '<parameter=content>\\n' and '\\n</parameter>'. Exactly one leading and one trailing newline are "
         "markup; the trailing '\\n  ' belongs to the value.",
+    ),
+    Case(
+        "trailing-newline-string",
+        ["single-call", "x-multiline-string", "x-whitespace-significant-string", "reasoning", "reasoning-prefilled"],
+        assistant(
+            reasoning="Write the file; POSIX text files end with a newline.",
+            calls=[call("write_file", {"path": "notes.txt", "content": "alpha\n\nomega\n"})],
+        ),
+        BOTH,
+        notes="The value ends with its own newline, so the template writes 'omega\\n' + '\\n</parameter>'. Only the "
+        "last newline is markup; a parser that strips every trailing newline loses the file's final one. "
+        "vllm-project/vllm#62078 reports Nemotron-3.5 GENERATING only one newline there, which no parser can "
+        "recover; this fixture is the template-rendered (unambiguous) form.",
     ),
     Case(
         "unicode",
@@ -620,6 +633,32 @@ def build_truncated(lds: dict[str, Loaded], renders: dict[str, dict[str, Rendere
     )
     rec(
         light,
+        "truncated-before-close-tool-call",
+        "thinking-disabled",
+        "</tool_call>",
+        expected_error={
+            "reason": "max_tokens hit after </function>; the closing </tool_call> is missing.",
+            "accept": ACCEPT_ALL,
+        },
+        tags=["truncated", "x-nemotron35"],
+        note="All arguments and </function> are present, but the call is still unfinished.",
+    )
+    rec(
+        light,
+        "truncated-second-parallel-call",
+        "parallel-same-tool",
+        "Tokyo",
+        expected={
+            "content": None,
+            "reasoning_content": reasoning,
+            "tool_calls": [{"name": "get_weather", "arguments": {"city": "Paris"}}],
+        },
+        tags=["truncated", "parallel-calls", "reasoning", "reasoning-prefilled", "x-nemotron35"],
+        note="The first call closed with </tool_call> before the cut, so it must be kept; the unfinished second "
+        "call must not be returned, and its text is not content (recovery.md, section 2).",
+    )
+    rec(
+        light,
         "truncated-in-parameter-value",
         "single-call",
         "\n</parameter>\n</function>",
@@ -677,8 +716,9 @@ def family_json(lds: dict[str, Loaded]) -> dict[str, Any]:
         "notes": "Tool calls use the Qwen3-Coder XML format (<tool_call>\\n<function=NAME>\\n<parameter=K>\\nV\\n"
         "</parameter>...); string values are raw and scalars render with Jinja '| string' (True/None), so a parser "
         "needs the tool schema. Thinking is on by default: the generation prompt pre-fills '<think>\\n'; "
-        "enable_thinking=false pre-fills '<think></think>'. Variants differ only in how reasoning closes: "
-        "nemotron-3 '\\n</think>\\n', nemotron-3.5 '</think>\\n'. Stop tokens: generation_config.json eos_token_id "
+        "enable_thinking=false pre-fills '<think></think>'. Variants differ only in how the template serializes "
+        "reasoning: nemotron-3 'R\\n</think>\\n' before a call or an answer, nemotron-3.5 'R</think>\\n' before a "
+        "call and 'R</think>' before an answer. Stop tokens: generation_config.json eos_token_id "
         "plus the tokenizer's eos_token <|im_end|> (Nano-4B's generation config lists only </s>). Tags "
         "x-nemotron3/x-nemotron35 name the reference template. Generator: scripts/fixtures/nemotron/build.py.",
     }

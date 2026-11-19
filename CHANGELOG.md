@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-- New family `nemotron` (NVIDIA Nemotron 3 Nano/Super/Ultra and 3.5 Lightning, issue #5): format notes in `docs/formats/nemotron.md`, 27 template-rendered fixtures from `scripts/fixtures/nemotron/build.py`, and parser mappings for vLLM (`qwen3_coder` + `nemotron_v3`), SGLang (`qwen3_coder` + `nemotron_3`), llama.cpp (the Qwen3-Coder handler) and Ollama (`nemotron-3-nano` / `nemotron-3.5-nano`). The NVIDIA Nemotron Open Model License and OpenMDW-1.1 texts are in `LICENSES/`.
+- New family `nemotron` (NVIDIA Nemotron 3 Nano/Super/Ultra and 3.5 Lightning, issue #5): format notes in `docs/formats/nemotron.md`, 33 template-rendered fixtures from `scripts/fixtures/nemotron/build.py`, and parser mappings for vLLM (`qwen3_coder` + `nemotron_v3`), SGLang (`qwen3_coder` + `nemotron_3`), llama.cpp (the Qwen3-Coder handler) and Ollama (`nemotron-3-nano` / `nemotron-3.5-nano`), limited to the five checked BF16 repos. Known engine issues vllm#62078, #49412 and #39103 are listed in the format notes. The NVIDIA Nemotron Open Model License and OpenMDW-1.1 texts are in `LICENSES/`.
 - The verifiers (`scripts/verify_upstream_pr.py`, `scripts/verify_compiled_pr.py`) now print the `unsupported` count on the `fixtures replayed` line, e.g. `fixtures replayed: 48 (N unsupported)`, and their JSON reports gain an `unsupported` field.
 
 ## [0.2.0] - 2026-11-15

@@ -179,9 +179,11 @@ PARSERS: dict[str, tuple[ModelRule, ...]] = {
     ),
     "gemma4": (_rule(r"gemma-4", "gemma4", "gemma4", "docs/formats/gemma4.md (vLLM v0.30.0 row)"),),
     "nemotron": (
-        # Nemotron-3.5-Bolt is Gemma 4 based (a different format) and matches no rule.
+        # Only the five repos whose templates docs/formats/nemotron.md checked. Nemotron-3.5-Bolt (Gemma 4
+        # based), 3.5-Super-VL, 3-Nano-Omni, the Base/GenRM and quantized repos match no rule.
         _rule(
-            r"Nemotron-3(\.5)?-(Nano|Super|Ultra|Lightning)",
+            r"NVIDIA-Nemotron-(3-Nano-4B|3-Nano-30B-A3B|3-Super-120B-A12B|3\.5-Lightning-30B-A3B|3-Ultra-550B-A55B)"
+            r"-BF16$",
             "qwen3_coder",
             "nemotron_v3",
             "Nemotron 3 Super / 3.5 Lightning model cards: --tool-call-parser qwen3_coder --reasoning-parser "

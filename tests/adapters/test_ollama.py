@@ -90,6 +90,8 @@ def test_registered_and_pinned() -> None:
         ("nemotron", "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16", None, "nemotron-3-nano"),
         ("nemotron", "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16", False, "nemotron-3-nano"),
         ("nemotron", "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16", None, "nemotron-3-nano"),
+        ("nemotron", "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16", None, "nemotron-3-nano"),
+        ("nemotron", "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16", None, "nemotron-3-nano"),
         ("nemotron", "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16", None, "nemotron-3.5-nano"),
     ],
 )
@@ -112,6 +114,11 @@ def test_parser_selection(family: str, model: str, thinking: bool | None, parser
         ("mistral", "mistralai/Devstral-Small-2-24B-Instruct-2512"),
         ("qwen3-xml", "Qwen/Qwen3-0.6B"),
         ("nemotron", "nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16"),
+        # Unverified Nemotron 3/3.5 repos: the rules name only the five checked templates.
+        ("nemotron", "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16"),
+        ("nemotron", "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16"),
+        ("nemotron", "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-Base-BF16"),
+        ("nemotron", "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-GenRM"),
     ],
 )
 def test_unsupported_is_honest(family: str, model: str) -> None:

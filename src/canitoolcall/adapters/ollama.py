@@ -119,17 +119,19 @@ PARSER_RULES: tuple[ParserRule, ...] = (
     ParserRule("glm", r"GLM-4\.7|GLM-5", "glm-4.7", f"{_LIB}: glm-4.7-flash; create/metadata.go glm4 -> glm-4.7"),
     ParserRule("gemma4", r"gemma-4", "gemma4", f"{_LIB}: gemma4"),
     ParserRule("mistral", r"Ministral-3|/Devstral-2-", "ministral", f"{_LIB}: ministral-3, devstral-2"),
-    # Both names construct Nemotron3NanoParser (model/parsers/parsers.go). Nemotron-3.5-Bolt is Gemma 4 based.
+    # Both names construct Nemotron3NanoParser (model/parsers/parsers.go). Only the five repos whose templates
+    # docs/formats/nemotron.md checked; Nemotron-3.5-Bolt (Gemma 4 based), 3.5-Super-VL, 3-Nano-Omni, the
+    # Base/GenRM and quantized repos match no rule.
     ParserRule(
         "nemotron",
-        r"Nemotron-3-Ultra",
+        r"NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16$",
         "nemotron-3.5-nano",
         "create/metadata.go nemotronRendererParserNameFromTemplate: nemotron_h + '{reasoning effort: efficient}' "
         "in the template -> nemotron-3.5-nano",
     ),
     ParserRule(
         "nemotron",
-        r"Nemotron-3(\.5)?-(Nano|Super|Lightning)",
+        r"NVIDIA-Nemotron-(3-Nano-4B|3-Nano-30B-A3B|3-Super-120B-A12B|3\.5-Lightning-30B-A3B)-BF16$",
         "nemotron-3-nano",
         "create/metadata.go nemotronRendererParserNameFromTemplate: nemotron_h architectures -> nemotron-3-nano",
     ),
