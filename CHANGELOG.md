@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- MiniMax-M3 and M3.1-Flash in the `minimax` family (issue #4), as a second sub-format (`m3-xml`, tag `x-m3`, ids `minimax/m3-*`): the generator renders 22 fixtures through the pinned MiniMax-M3 chat template (rev `d95e30c`, MiniMax Community License, copied to `LICENSES/minimax-m3-community.txt`; M3.1-Flash is checked to render identically) plus 6 token-prefix truncations, the format notes cover M3, and vLLM (`minimax_m3`) and SGLang (`minimax-m3`) map M3 to their M3 tool and reasoning parsers. llama.cpp (which has an M3 handler at its pin), Ollama and transformers still report the family `unsupported`. M2.x fixtures are unchanged.
+
 ## [0.3.0] - 2026-11-19
 
 Ask the matrix without a checkout (`lookup`, a versioned `matrix.json`, an MCP server, badges), probe the Responses API

@@ -14,7 +14,7 @@ These notes are the reference for writing fixtures. Every rendered example in th
 | [`deepseek`](deepseek.md) | DeepSeek V3/R1 → V3.1 → V3.2 → V4 → V4.1 | DeepSeek-V4.1-Flash, V4-Flash(-0731), V4-Pro, V3.2, V3.1, R1-0528 | 5 incompatible formats: full-width `<｜tool▁calls▁begin｜>` tokens (V3/R1, V3.1), then DSML XML (V3.2 `function_calls`, V4 `tool_calls`, V4.1 ` calls`) |
 | [`kimi`](kimi.md) | Kimi K2.x and K3 | Kimi-K2-Instruct(-0905), K2-Thinking, K2.5, K2.6, K2.7-Code, K3 | K2: `<\|tool_calls_section_begin\|>…<\|tool_call_begin\|>functions.NAME:IDX<\|tool_call_argument_begin\|>{…}`; K3: "XTML" `<\|open\|>call tool="…"<\|sep\|>…` |
 | [`glm`](glm.md) | GLM-4.5, 4.6, 4.7, 5.x | GLM-5.3, GLM-5.3-Flash, GLM-5.2, GLM-4.7(-Flash), GLM-4.5 | `<tool_call>NAME<arg_key>K</arg_key><arg_value>V</arg_value></tool_call>` |
-| [`minimax`](minimax.md) | MiniMax M2, M2.1, M2.5, M2.7 | MiniMax-M2.7, M2.5, M2.1, M2 | `<minimax:tool_call>\n<invoke name="NAME">\n<parameter name="K">V</parameter>…`; the generation prompt opens `<think>` |
+| [`minimax`](minimax.md) | MiniMax M2, M2.1, M2.5, M2.7, M3, M3.1-Flash | MiniMax-M3.1-Flash, M3, M2.7, M2.5, M2.1, M2 | M2.x: `<minimax:tool_call>\n<invoke name="NAME">\n<parameter name="K">V</parameter>…`, the generation prompt opens `<think>`; M3: `]<]minimax[>[<tool_call>` with one element per key (`]<]minimax[>[<city>Zürich]<]minimax[>[</city>`) and `<mm:think>` |
 | [`llama`](llama.md) | Llama 3.1, 3.2, 3.3 and 4 | Llama-3.1-8B, 3.2-1B/3B, 3.3-70B, Llama-4-Scout/Maverick | 3.1/3.3: bare JSON `{"name":…, "parameters":…}`; 3.2/4: pythonic `[f(a=1)]` |
 | [`mistral`](mistral.md) | Mistral, Magistral, Devstral, Ministral | Mistral-Small-4, Mistral-Medium-3.5, Ministral-3, Devstral-2, Magistral-2509, Mistral-Small-3.2 | depends on tokenizer version: `[TOOL_CALLS][{…}]` (v3/v7), `[TOOL_CALLS]NAME[CALL_ID]ID[ARGS]{…}` (v11), `[TOOL_CALLS]NAME[ARGS]{…}` (v13+) |
 | [`gemma4`](gemma4.md) | Gemma 4 (and a note on Gemma 3) | gemma-4-31B-it, 26B-A4B-it, 12B-it, E4B/E2B-it | `<\|tool_call>call:NAME{key:<\|"\|>str<\|"\|>,n:3}<tool_call\|>`: **not JSON** |
@@ -34,8 +34,7 @@ The HF API was queried by author on 2026-09-25, sorted by downloads and by creat
 - **Meta:** there has been no new open-weight Llama since Llama 4 (2025-04). Llama is kept because 3.x is still among the most-downloaded instruct models (Llama-3.1-8B-Instruct has 6.2M downloads).
 
 ### Not covered yet (next candidates)
-- **MiniMax M3 and MiniMax-H3.** M2.x is now covered by [`minimax`](minimax.md). Both vLLM and SGLang have a dedicated M3 parser (`minimax_m3`). Format rendered during this research, from the official template:
-  - **M3** (rev `f0e1c1e`): `]<]minimax[>[<tool_call>` with per-key XML elements such as `<city>Zürich]<]minimax[>[</city>`
+- **MiniMax-H3.** MiniMax M2.x and M3 are now covered by [`minimax`](minimax.md).
 - **NVIDIA Nemotron 3 / 3.5.** vLLM `nemotron_v3` reasoning parser, SGLang `nemotron_3`.
 
 ## 2. Engine versions the parser mappings refer to

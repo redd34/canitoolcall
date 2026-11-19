@@ -131,6 +131,7 @@ PARSERS: dict[str, tuple[ParserRule, ...]] = {
         # The model cards use --reasoning-parser minimax-append-think, which keeps <think> in content;
         # "minimax" is the detector that separates the reasoning (docs/formats/minimax.md).
         ParserRule("MiniMax-M2", "minimax-m2", "minimax"),
+        ParserRule("MiniMax-M3", "minimax-m3", "minimax-m3"),  # M3 and M3.1-Flash (docs/formats/minimax.md)
     ),
     "llama": (
         ParserRule("Llama-4", "pythonic", None),

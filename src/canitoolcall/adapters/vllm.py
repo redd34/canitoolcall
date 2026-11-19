@@ -175,6 +175,13 @@ PARSERS: dict[str, tuple[ModelRule, ...]] = {
             "docs/formats/minimax.md (vLLM v0.34.0 row); the model cards use minimax_m2_append_think, "
             "which keeps <think> in content",
         ),
+        _rule(
+            r"MiniMax-M3(?!\d)",
+            "minimax_m3",
+            "minimax_m3",
+            "docs/formats/minimax.md (vLLM v0.34.0 row); vLLM's MiniMax-M3 recipe: --tool-call-parser minimax_m3 "
+            "--reasoning-parser minimax_m3",
+        ),
     ),
     "llama": (
         _rule(r"Llama-4", "llama4_pythonic", None, "docs/formats/llama.md (vLLM v0.34.0 row)"),

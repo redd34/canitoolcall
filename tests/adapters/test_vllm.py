@@ -88,6 +88,8 @@ FAMILY_SLUGS = (
         ("glm", "zai-org/GLM-5.3", "glm47", "glm47"),
         ("minimax", "MiniMaxAI/MiniMax-M2.7", "minimax_m2", "minimax_m2"),
         ("minimax", "MiniMaxAI/MiniMax-M2", "minimax_m2", "minimax_m2"),
+        ("minimax", "MiniMaxAI/MiniMax-M3", "minimax_m3", "minimax_m3"),
+        ("minimax", "MiniMaxAI/MiniMax-M3.1-Flash", "minimax_m3", "minimax_m3"),
         ("llama", "meta-llama/Llama-3.1-8B-Instruct", "llama3_json", None),
         ("llama", "meta-llama/Llama-4-Scout-17B-16E-Instruct", "llama4_pythonic", None),
         ("mistral", "mistralai/Mistral-Small-3.2-24B-Instruct-2506", "mistral", None),
@@ -118,8 +120,9 @@ def test_parser_map_covers_known_families_only() -> None:
         ("no-such-family", "Qwen/Qwen3-0.6B"),
         ("llama", "meta-llama/Llama-2-7b-chat-hf"),
         ("gemma4", "google/gemma-3-27b-it"),
-        ("minimax", "MiniMaxAI/MiniMax-M3"),
         ("minimax", "MiniMaxAI/MiniMax-M20"),
+        ("minimax", "MiniMaxAI/MiniMax-M30"),
+        ("minimax", "MiniMaxAI/MiniMax-M1-80k"),
     ],
 )
 def test_unsupported_is_honest(family: str, model: str) -> None:

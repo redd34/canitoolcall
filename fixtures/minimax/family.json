@@ -1,6 +1,6 @@
 {
   "slug": "minimax",
-  "name": "MiniMax (M2, M2.1, M2.5, M2.7)",
+  "name": "MiniMax (M2, M2.1, M2.5, M2.7, M3, M3.1-Flash)",
   "spec_version": "0.2",
   "has_reasoning": true,
   "markers": [
@@ -16,7 +16,10 @@
     "</response>",
     "]~!b[",
     "]~b]",
-    "[e~["
+    "[e~[",
+    "]<]minimax[>[",
+    "<mm:think>",
+    "</mm:think>"
   ],
   "reference_models": [
     {
@@ -28,8 +31,18 @@
         "[e~["
       ],
       "tokenizer_mode": "hf"
+    },
+    {
+      "repo": "MiniMaxAI/MiniMax-M3",
+      "revision": "d95e30cb912fe3021bb9c2ba66a8ce60b6c937a9",
+      "variant": "m3-xml",
+      "default_generation_prompt": "]~b]ai\n",
+      "stop_tokens": [
+        "[e~["
+      ],
+      "tokenizer_mode": "hf"
     }
   ],
   "format_notes": "docs/formats/minimax.md",
-  "notes": "XML-ish format: one <minimax:tool_call> section holding one <invoke name=\"...\"> per call, each with <parameter name=\"...\"> elements. String values are raw (no escaping); other values are JSON, so a parser needs the tool schema. The generation prompt always opens <think>, so the completion starts inside the reasoning. M2, M2.1, M2.5 and M2.7 render identical assistant turns (see models). MiniMax-M3 uses a different format and is not part of this family."
+  "notes": "Two sub-formats selected by models[0] (tags x-m2 / x-m3). M2.x: one <minimax:tool_call> section holding one <invoke name=\"...\"> per call, each with <parameter name=\"...\"> elements; string values are raw, other values JSON; the generation prompt always opens <think>, so the completion starts inside the reasoning. M3: every structural tag is prefixed with the ]<]minimax[>[ token, each parameter is an element named after its key, nested objects and arrays are expanded into child and <item> elements, scalars are bare text; reasoning is <mm:think>...</mm:think> (or a bare </mm:think> without reasoning). Both need the tool schema to recover value types."
 }

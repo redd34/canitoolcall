@@ -122,6 +122,8 @@ def test_module_does_not_import_sglang() -> None:
         ("gemma4", "google/gemma-4-31B-it", "gemma4", "gemma4"),
         ("minimax", "MiniMaxAI/MiniMax-M2.7", "minimax-m2", "minimax"),
         ("minimax", "MiniMaxAI/MiniMax-M2", "minimax-m2", "minimax"),
+        ("minimax", "MiniMaxAI/MiniMax-M3", "minimax-m3", "minimax-m3"),
+        ("minimax", "MiniMaxAI/MiniMax-M3.1-Flash", "minimax-m3", "minimax-m3"),
     ],
 )
 def test_parser_mapping(family: str, model: str, tool_parser: str, reasoning_parser: str | None) -> None:
@@ -142,7 +144,7 @@ def test_deepseek_v41_is_unsupported() -> None:
     [
         ("nope", "org/model"),
         ("llama", "meta-llama/Llama-2-7b-chat-hf"),
-        ("minimax", "MiniMaxAI/MiniMax-M3"),
+        ("minimax", "MiniMaxAI/MiniMax-M1-80k"),
         ("seed-oss", "ByteDance-Seed/Seed-OSS-36B-Instruct"),
     ],
 )
