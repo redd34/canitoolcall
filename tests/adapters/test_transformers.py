@@ -36,6 +36,7 @@ from canitoolcall.adapters.transformers import (
     exception_text,
     resolve_tokenizer,
     response_template_sha256,
+    same_tokenizer,
 )
 from canitoolcall.chunking import DEFAULT_STRATEGIES
 from canitoolcall.fixtures import TokenizerPin, load_families, read_jsonl, repo_root
@@ -44,6 +45,7 @@ from canitoolcall.results import ParsedToolCall, ParseResult
 ROOT = repo_root() or Path(__file__).resolve().parents[2]
 GEMMA = "google/gemma-4-E2B-it"
 GEMMA_REV = PINNED_REPOS[GEMMA]
+QWEN38 = "Qwen/Qwen3.8-27B"
 STRATEGIES = [s.id for s in DEFAULT_STRATEGIES]
 
 
@@ -55,12 +57,17 @@ STRATEGIES = [s.id for s in DEFAULT_STRATEGIES]
 def test_registered_and_pinned() -> None:
     cls = adapter_class("transformers")
     assert cls is TransformersAdapter
-    assert cls.pinned_version == "5.17.0"
+    assert cls.pinned_version == "5.23.0"
 
 
-@pytest.mark.parametrize("repo", sorted(PINNED_REPOS))
-def test_supports_gemma4_repos(repo: str) -> None:
-    assert TransformersAdapter().supports("gemma4", repo)
+@pytest.mark.parametrize(("family", "repo"), sorted((f, r) for f, repos in FAMILY_REPOS.items() for r in repos))
+def test_supports_mapped_repos(family: str, repo: str) -> None:
+    assert TransformersAdapter().supports(family, repo)
+
+
+def test_qwen38_is_mapped_at_the_revision_that_ships_its_template() -> None:
+    assert FAMILY_REPOS["qwen3-xml"] == {QWEN38}
+    assert PINNED_REPOS[QWEN38] == "37561816e66b5b9153b1b64c10968c18c1e6f4a0"
 
 
 @pytest.mark.parametrize(
@@ -70,6 +77,8 @@ def test_supports_gemma4_repos(repo: str) -> None:
         ("gpt-oss", "openai/gpt-oss-20b", "no Hub repo of family"),
         ("gemma4", "unsloth/gemma-4-E2B-it", "not a repo verified"),
         ("gemma4", "google/gemma-4-E2B-it-qat-q4_0-gguf", "not a repo verified"),
+        ("qwen3-xml", "Qwen/Qwen3.5-9B", "not a repo verified"),
+        ("qwen3-xml", "Qwen/Qwen3-Coder-30B-A3B-Instruct", "not a repo verified"),
     ],
 )
 def test_supports_declines_honestly(family: str, model: str, why: str) -> None:
@@ -79,7 +88,7 @@ def test_supports_declines_honestly(family: str, model: str, why: str) -> None:
 
 
 def test_family_map_only_lists_pinned_repos() -> None:
-    assert set(FAMILY_REPOS) == {"gemma4"}
+    assert set(FAMILY_REPOS) == {"gemma4", "qwen3-xml"}
     assert all(r in PINNED_REPOS for repos in FAMILY_REPOS.values() for r in repos)
     assert all(len(rev) == 40 for rev in PINNED_REPOS.values())
 
@@ -93,6 +102,19 @@ def test_resolve_tokenizer_prefers_fixture_pin() -> None:
     assert resolve_tokenizer(pinned) == (GEMMA, "a" * 40)
     with pytest.raises(ValueError, match="no pinned revision"):
         resolve_tokenizer(ReplayInput(fixture_id="x/y", family="x", model="org/unknown", text=""))
+
+
+def test_same_tokenizer_ignores_only_the_template_keys() -> None:
+    a = {"model_max_length": 10, "chat_template": "x", "response_template": None, "added_tokens_decoder": {"1": {}}}
+    b = {
+        "model_max_length": 10,
+        "chat_template": "y",
+        "response_template": {"fields": {}},
+        "added_tokens_decoder": {"1": {}},
+    }
+    assert same_tokenizer(a, b)
+    assert not same_tokenizer(a, {**b, "model_max_length": 11})
+    assert not same_tokenizer(a, {k: v for k, v in b.items() if k != "added_tokens_decoder"})
 
 
 def test_template_sha_is_key_order_independent() -> None:
@@ -123,7 +145,7 @@ def test_exception_text() -> None:
 
 
 # --------------------------------------------------------------------------
-# engine tests (real transformers 5.17.0 in .venvs/transformers)
+# engine tests (real transformers 5.23.0 in .venvs/transformers)
 # --------------------------------------------------------------------------
 
 # Renders Gemma 4 assistant turns through the official chat template and prints
@@ -326,7 +348,7 @@ def test_gemma4_rendered_outputs_replay_correctly(engine_python_for: Path) -> No
             for sid, got in reply["streams"].items():
                 assert _decoded(got, strip=True) == want, (rec["id"], sid, got)
                 if rec["expected"]["reasoning_content"]:
-                    # Observed engine behaviour at 5.17.0 (whitespace-only, soft_pass):
+                    # Observed engine behaviour at 5.17.0 and 5.23.0 (whitespace-only, soft_pass):
                     # ResponseParser's thinking ``region_chunk`` keeps the "\n" before
                     # ``<channel|>`` while its ``region_close`` value (and parse_response)
                     # strips it, so ``transformers serve`` streams a trailing newline.
@@ -389,5 +411,34 @@ def test_gemma4_corpus_replays_without_harness_errors(engine_python_for: Path) -
         for where, rec in corpus:
             reply = w.ask({"op": "replay", "fixture": rec, "family": fam, "strategies": STRATEGIES})
             assert reply["ok"], (where, reply.get("error"))
+    finally:
+        w.close()
+
+
+def _corpus_qwen38() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    d = ROOT / "fixtures" / "qwen3-xml"
+    fam = json.loads((d / "family.json").read_text(encoding="utf-8"))
+    recs = [rec for p in sorted(d.glob("*.jsonl")) for _, rec in read_jsonl(p) if rec["models"][0] == QWEN38]
+    return fam, recs
+
+
+@pytest.mark.engine("transformers")
+def test_qwen38_replays_with_the_template_from_its_pinned_revision(engine_python_for: Path) -> None:
+    """Fixtures pin the tokenizer at a revision without a template; the template comes from PINNED_REPOS."""
+    fam, recs = _corpus_qwen38()
+    assert recs
+    w = Worker(engine_python_for)
+    try:
+        for rec in recs:
+            reply = w.ask({"op": "replay", "fixture": rec, "family": fam, "strategies": STRATEGIES})
+            assert reply["ok"], (rec["id"], reply.get("error"))
+            assert reply["supported"], (rec["id"], reply)
+            cfg = reply["parser_config"]
+            assert cfg["response_template_source"] == f"{QWEN38}@{PINNED_REPOS[QWEN38]}:tokenizer_config.json"
+            assert cfg["tokenizer"] == f"{QWEN38}@{rec['tokenizer']['revision']}"
+            if rec["id"] == "qwen3-xml/q38-single-call":
+                # The template names the field reasoning_content (serve reads it via _REASONING_FIELDS).
+                want = {**rec["expected"], "exception": None}
+                assert _decoded(reply["nonstream"], strip=True) == want, reply["nonstream"]
     finally:
         w.close()

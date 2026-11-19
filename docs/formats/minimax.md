@@ -109,7 +109,7 @@ Checked in the source of the pinned releases (the PyPI artifacts of vLLM 0.30.0 
 | SGLang v0.5.20 (`94602c9`) | `minimax-m2` → `MinimaxM2Detector` (`python/sglang/srt/function_call/minimax_m2.py`) | `minimax` → `Qwen3Detector` with `force_reasoning=True` (`python/sglang/srt/parser/reasoning_parser.py`); `minimax-append-think` also exists |
 | llama.cpp v0.5.0 | **not verified.** There is no per-model format enum; the parser is derived from the chat template, and the adapter has no `minimax` entry, so the family is reported `unsupported`. | |
 | Ollama v0.34.4 | **not verified.** The adapter has no `minimax` rule, so the family is reported `unsupported`. | |
-| transformers 5.17.0 | none: the family is unsupported unless a repo ships `response_template`, and the four MiniMax repos were not checked, so the adapter does not list them. | |
+| transformers 5.23.0 | none: none of the four MiniMax repos ships a `response_template` in `tokenizer_config.json` at its fixture pin (checked 2026-11-19), so the family is unsupported. | |
 
 **Official recommendation:** the model cards' deployment guides use `--tool-call-parser minimax_m2 --reasoning-parser minimax_m2_append_think` (vLLM) and `--tool-call-parser minimax-m2 --reasoning-parser minimax-append-think` (SGLang). Those append-think parsers deliberately leave the reasoning inside `content`. The adapters map the family to the reasoning parsers that **separate** reasoning (`minimax_m2` and `minimax`), because the checks compare `reasoning_content`. The matrix therefore says nothing about the append-think parsers.
 

@@ -3,38 +3,44 @@
 in its ``tokenizer_config.json``.
 
 Owner: transformers adapter builder (see docs/DESIGN.md). Runs in
-``.venvs/transformers`` (transformers==5.17.0, jinja2, jmespath; no torch),
+``.venvs/transformers`` (transformers==5.23.0, jinja2, jmespath; no torch),
 built by ``scripts/engines/transformers.sh``.
 
-Entry points (transformers 5.17.0), called exactly as below:
+Entry points (transformers 5.23.0), called exactly as below:
 
-* non-streaming: ``tok.parse_response(output_ids, prefix=prompt_text, tools=tools)``
+* non-streaming: ``tok.parse_response(output_ids, template, prefix=prompt_text, tools=tools)``
   (``output_ids`` are decoded inside transformers, as ``transformers serve`` does)
-* streaming: ``ResponseParser(tok.response_template, prefix=prompt_text, tools=tools)``;
+* streaming: ``ResponseParser(template, prefix=prompt_text, tools=tools)``;
   ``initial_events``, then ``.feed(delta)`` once per id group, then ``.finalize()``.
   Text deltas come from the Rust ``tokenizers.decoders.DecodeStream`` with
   ``skip_special_tokens=False``, stepped one id at a time. That is the
   detokenizer ``transformers serve`` uses when a response parser is active,
   and it never splits a multi-byte character.
 * Parser events become OpenAI deltas through transformers' own
-  ``transformers.cli.serving.utils.response_events_to_chunks``. Tool-call
+  ``transformers.cli.serving.utils.response_events_to_chunks``. The
+  non-streaming reasoning is the first field of transformers'
+  ``_REASONING_FIELDS`` (``reasoning_content``, ``thinking``, ``reasoning``)
+  that is set, as ``serve``'s ``parse_response_with_tools`` reads it. Tool-call
   arguments are serialized with its ``_normalize_tool_call``
   (``json.dumps``, so non-ASCII is ``\\u``-escaped; it is still valid JSON).
 * The legacy ``response_schema`` key is dropped by transformers 5.x and is
   never used here.
 
 Coverage rule: a ``(family, model)`` pair is supported only when the model's
-Hub repo itself ships a ``response_template`` at the pinned revision. As of
-2026-09-25 that is only the ``google/gemma-4-*-it`` repos in
-:data:`PINNED_REPOS`. At load time the adapter re-checks that the downloaded
-``tokenizer_config.json`` contains ``response_template``. Response templates
+Hub repo itself ships a ``response_template`` at the revision pinned in
+:data:`PINNED_REPOS`. The template is read from that revision; the tokenizer
+and chat template come from the fixture's tokenizer pin, which produced the
+token ids. When the two revisions differ, ``tokenizer.json`` must be
+byte-identical and ``tokenizer_config.json`` identical apart from
+``chat_template``/``response_template``, or the replay is a harness error. At
+load time the adapter re-checks that the downloaded ``tokenizer_config.json``
+contains ``response_template``. Response templates
 copied from transformers' tests, and the ``transformers serve`` fallbacks
 keyed on ``model_type``, are not what the Hub repo ships, so they are never
 used for results.
 
-Differences from ``transformers serve`` (recorded in ``parser_config``):
-``tools`` are passed to the parser, which casts tool-call arguments with the
-tool's JSON schema. ``serve`` does not pass them. The prompt is rendered from
+Differences from ``transformers serve`` (recorded in ``parser_config``): the
+prompt is rendered from
 a fixed placeholder user message, because fixtures do not record the
 conversation. Only the part after the template's ``start_anchor`` reaches
 the parser.
@@ -60,27 +66,40 @@ from canitoolcall.adapters.base import (
 from canitoolcall.chunking import TokensPerStep
 from canitoolcall.results import ParsedToolCall, ParseResult, StreamAccumulator
 
-PINNED_REPOS: dict[str, str] = {
+GEMMA4_REPOS: dict[str, str] = {
     "google/gemma-4-E2B-it": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
     "google/gemma-4-E4B-it": "ee0ef6023621cff504d758262d4e04895a5af4a2",
     "google/gemma-4-12B-it": "707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
     "google/gemma-4-26B-A4B-it": "4d7ae4984b7db7de8f8457170b3f1a419ee76d52",
     "google/gemma-4-31B-it": "842da3794eaa0b77d5f08bae87a17459d91ff475",
 }
-"""Hub repos verified (2026-09-25) to ship ``response_template`` in
-``tokenizer_config.json``, with the revision the check was made at. All five
-ship the same template."""
+"""Verified 2026-09-25. All five ship the same template."""
+
+QWEN3_XML_REPOS: dict[str, str] = {
+    # "Add a response template and generation tags (#236)", 2026-11-07. The fixtures' pin,
+    # 1d4bf0f2, has no response_template; tokenizer.json is unchanged between the two.
+    "Qwen/Qwen3.8-27B": "37561816e66b5b9153b1b64c10968c18c1e6f4a0",
+}
+"""Verified 2026-11-19. Qwen/Qwen3.6-35B-A3B@345d467b ships the same template
+(its #81), but no fixture leads with that repo, so it is not listed."""
+
+PINNED_REPOS: dict[str, str] = {**GEMMA4_REPOS, **QWEN3_XML_REPOS}
+"""Hub repos verified to ship ``response_template`` in ``tokenizer_config.json``,
+with the revision the check was made at; the template is read from it."""
 
 FAMILY_REPOS: dict[str, frozenset[str]] = {
-    "gemma4": frozenset(PINNED_REPOS),
+    "gemma4": frozenset(GEMMA4_REPOS),
+    "qwen3-xml": frozenset(QWEN3_XML_REPOS),
 }
 """Family slug -> repos whose Hub-shipped ``response_template`` is the parser.
 
 In transformers the tool parser and the reasoning parser are both the one
-``response_template`` (fields ``tool_calls`` and ``thinking``). No other
-family's repos ship one: Qwen3/3.5/3.6, SmolLM3, ERNIE-4.5, gpt-oss,
-GLM-4.5/4.6, DeepSeek-V3.1/V3.2, Kimi-K2, Mistral-Small-3.2 and Ministral-3 were
-checked. Cohere and Llama are gated and were not checked."""
+``response_template`` (fields ``tool_calls`` and ``thinking`` or
+``reasoning_content``). On 2026-11-19 every other repo the fixtures list was
+checked at its fixture pin and at its Hub ``main``: none ships one (the
+Qwen3, Qwen3.5, Qwen3-Coder, DeepSeek, GLM, gpt-oss, Kimi, MiniMax, Mistral,
+Seed-OSS and unsloth Llama repos). The meta-llama repos are gated and were not
+checked."""
 
 PARSER_NAME = "response_template"
 """transformers has no named parsers: the repo's ``response_template`` is the parser."""
@@ -89,7 +108,10 @@ TEMPLATE_FILE = "tokenizer_config.json"
 
 SERVE_UTILS = "transformers.cli.serving.utils"
 """``transformers serve`` helpers reused for event -> delta translation and
-tool-call serialization (importable without torch in 5.17.0)."""
+tool-call serialization (importable without torch in 5.23.0)."""
+
+TEMPLATE_KEYS = frozenset({"chat_template", "response_template"})
+"""``tokenizer_config.json`` keys that may differ between the template revision and the tokenizer pin."""
 
 
 def _engine(module: str) -> Any:
@@ -101,6 +123,13 @@ def response_template_sha256(template: Mapping[str, Any]) -> str:
     """sha256 of the template as canonical JSON (sorted keys, compact, UTF-8)."""
     blob = json.dumps(template, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def same_tokenizer(a: Mapping[str, Any], b: Mapping[str, Any]) -> bool:
+    """Two ``tokenizer_config.json`` dicts are equal apart from :data:`TEMPLATE_KEYS`."""
+    return {k: v for k, v in a.items() if k not in TEMPLATE_KEYS} == {
+        k: v for k, v in b.items() if k not in TEMPLATE_KEYS
+    }
 
 
 def resolve_tokenizer(raw: ReplayInput) -> tuple[str, str]:
@@ -127,10 +156,11 @@ def exception_text(exc: BaseException) -> str:
 
 @dataclass(frozen=True)
 class _Loaded:
-    """One tokenizer at one revision, with its verified Hub-shipped template."""
+    """One tokenizer at one revision, with the verified Hub-shipped template of its repo."""
 
     repo: str
     revision: str
+    template_revision: str
     tok: Any
     template: dict[str, Any]
     template_sha256: str
@@ -139,7 +169,7 @@ class _Loaded:
 
 class TransformersAdapter(Adapter):
     name: ClassVar[str] = "transformers"
-    pinned_version: ClassVar[str] = "5.17.0"
+    pinned_version: ClassVar[str] = "5.23.0"
     supports_text_deltas: ClassVar[bool] = True
     tokens_per_step: ClassVar[TokensPerStep] = "one"
     """``transformers serve`` streams from ``generate`` one sampled token at a time."""
@@ -199,19 +229,29 @@ class TransformersAdapter(Adapter):
         hf_hub_download = _engine("huggingface_hub").hf_hub_download
         AutoTokenizer = _engine("transformers").AutoTokenizer
 
-        with open(hf_hub_download(repo, TEMPLATE_FILE, revision=revision), encoding="utf-8") as f:
-            shipped = json.load(f).get("response_template")
+        def read(rev: str, name: str) -> bytes:
+            with open(hf_hub_download(repo, name, revision=rev), "rb") as f:
+                return f.read()
+
+        template_revision = PINNED_REPOS.get(repo, revision)
+        template_config = json.loads(read(template_revision, TEMPLATE_FILE))
+        shipped = template_config.get("response_template")
         if not isinstance(shipped, dict):
             # Harness problem: the static coverage table is stale for this revision.
-            raise RuntimeError(f"{repo}@{revision} does not ship a response_template in {TEMPLATE_FILE}")
+            raise RuntimeError(f"{repo}@{template_revision} does not ship a response_template in {TEMPLATE_FILE}")
         tok = AutoTokenizer.from_pretrained(repo, revision=revision)
-        template = getattr(tok, "response_template", None)
-        if template != shipped:
-            raise RuntimeError(f"{repo}@{revision}: tokenizer.response_template differs from {TEMPLATE_FILE}")
+        if template_revision == revision:
+            if getattr(tok, "response_template", None) != shipped:
+                raise RuntimeError(f"{repo}@{revision}: tokenizer.response_template differs from {TEMPLATE_FILE}")
+        elif read(revision, "tokenizer.json") != read(template_revision, "tokenizer.json") or not same_tokenizer(
+            json.loads(read(revision, TEMPLATE_FILE)), template_config
+        ):
+            raise RuntimeError(f"{repo}: the tokenizer at {revision} differs from the one at {template_revision}")
         chat_template = getattr(tok, "chat_template", None)
         loaded = _Loaded(
             repo=repo,
             revision=revision,
+            template_revision=template_revision,
             tok=tok,
             template=shipped,
             template_sha256=response_template_sha256(shipped),
@@ -252,13 +292,13 @@ class TransformersAdapter(Adapter):
         return {
             "tool_parser": PARSER_NAME,
             "reasoning_parser": PARSER_NAME,
-            "response_template_source": f"{st.repo}@{st.revision}:{TEMPLATE_FILE}",
+            "response_template_source": f"{st.repo}@{st.template_revision}:{TEMPLATE_FILE}",
             "response_template_sha256": st.template_sha256,
             "chat_template_sha256": st.chat_template_sha256,
             "tokenizer": f"{st.repo}@{st.revision}",
             "tokenizer_mode": "hf",
-            "nonstream_entrypoint": "tokenizer.parse_response(output_ids, prefix=prompt, tools=tools)",
-            "stream_entrypoint": "ResponseParser(response_template, prefix=prompt, tools=tools).feed/.finalize",
+            "nonstream_entrypoint": "tokenizer.parse_response(output_ids, template, prefix=prompt, tools=tools)",
+            "stream_entrypoint": "ResponseParser(template, prefix=prompt, tools=tools).feed/.finalize",
             "stream_detokenizer": "tokenizers.decoders.DecodeStream(skip_special_tokens=False), one id per step",
             "stream_events": "transformers.cli.serving.utils.response_events_to_chunks",
             "tools_passed_to_parser": True,
@@ -281,17 +321,18 @@ class TransformersAdapter(Adapter):
         prompt = self._prompt_text(st, raw, tools)
         ids = self.units(raw)
         _normalize_tool_call = _engine(SERVE_UTILS)._normalize_tool_call
+        reasoning_fields = _engine("transformers.utils.chat_template_utils")._REASONING_FIELDS
 
         try:
-            msg = st.tok.parse_response(ids, prefix=prompt, tools=[dict(t) for t in tools] or None)
+            msg = st.tok.parse_response(ids, st.template, prefix=prompt, tools=[dict(t) for t in tools] or None)
             calls = [_normalize_tool_call(v) for v in msg.get("tool_calls") or []]
         except Exception as e:  # engine outcome, not a harness error
             return ParseResult(exception=exception_text(e))
         content = msg.get("content")
-        thinking = msg.get("thinking")
+        reasoning = next((msg[f] for f in reasoning_fields if msg.get(f) is not None), None)
         return ParseResult(
             content=content if isinstance(content, str) else None,
-            reasoning_content=thinking if isinstance(thinking, str) else None,
+            reasoning_content=reasoning if isinstance(reasoning, str) else None,
             tool_calls=tuple(ParsedToolCall(name=c.name, arguments_raw=c.arguments) for c in calls),
         )
 

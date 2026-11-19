@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the isolated HF transformers replay env: .venvs/transformers
 #
-#   transformers==5.17.0 + jinja2 + jmespath, Python 3.12, NO torch.
+#   transformers==5.23.0 + jinja2 + jmespath, Python 3.12, NO torch.
 #   (tokenizer.parse_response / ResponseParser and the tokenizers DecodeStream
 #   only need the tokenizer stack; torch is never imported.)
 #
@@ -17,7 +17,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 VENV="$ROOT/.venvs/transformers"
 PY="$VENV/bin/python"
-TRANSFORMERS_VERSION="5.17.0"
+TRANSFORMERS_VERSION="5.23.0"
 
 prefetch=1
 for arg in "$@"; do

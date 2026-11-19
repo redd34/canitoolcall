@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- HF transformers pin bumped from 5.17.0 to 5.23.0 (`scripts/engines/transformers.sh`, the `transformers` extra, which now needs Python >= 3.11, adapter, docs). `parse_response` and the response-template format are unchanged apart from small argument-coercion fixes (`oneOf`, whole-number floats for integers, already-decoded arrays, copied defaults: transformers#48719, #49547, #49062, #49370); the Gemma 4 replays are byte-identical to 5.17.0. `serve` now passes `tools` to the parser (transformers#50385), as the adapter already did, and reads reasoning from `reasoning_content`, `thinking` or `reasoning` (transformers#49535); the adapter now does the same in non-streaming. New coverage: `Qwen/Qwen3.8-27B` ships a `response_template` since Hub commit `3756181` (2026-11-07), so its 24 `qwen3-xml` fixtures are replayed (local run: 20 `soft_pass`, 4 `fail`; they were `unsupported`). The template is read at `3756181` and the tokenizer at the fixtures' pin `1d4bf0f`, whose tokenizer files are identical. No other repo the fixtures list ships a template. The committed snapshot is unchanged; the nightly regenerates it.
+
 ## [0.3.0] - 2026-11-19
 
 Ask the matrix without a checkout (`lookup`, a versioned `matrix.json`, an MCP server, badges), probe the Responses API

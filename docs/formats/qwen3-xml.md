@@ -115,6 +115,7 @@ The older templates use Jinja `| string` on Python values, which yields `True`/`
 | SGLang v0.5.20 | `qwen3_coder` (`Qwen3CoderDetector`); also reused by `step3p5` and `nanbeige` | `qwen3` |
 | llama.cpp v0.5.0 | Automatic (PEG), from template. Test templates: `models/templates/Qwen3-Coder.jinja`, `Qwen3.5-4B.jinja` | same |
 | Ollama v0.34.4 | `qwen3-coder`, `qwen3.5` | built in |
+| HF transformers 5.23.0 | Qwen3.8-27B only: the `response_template` in [`tokenizer_config.json` at `3756181`](https://huggingface.co/Qwen/Qwen3.8-27B/blob/37561816e66b5b9153b1b64c10968c18c1e6f4a0/tokenizer_config.json) (Hub commit "Add a response template and generation tags (#236)", 2026-11-07; `tool_calls` with `xml-inline` arguments). The fixtures pin `1d4bf0f`, which has no template; `tokenizer.json` is unchanged between the two. Qwen3.6-35B-A3B ships the same template at `345d467` but leads no fixture. The Qwen3.5 and Qwen3-Coder repos ship none. | same template (`reasoning_content`) |
 
 **Official recommendation:** the Qwen3.5-9B model card says `--tool-call-parser qwen3_coder --reasoning-parser qwen3 --enable-auto-tool-choice`, and the Qwen3-Coder-Next card says `--tool-call-parser qwen3_coder`.
 

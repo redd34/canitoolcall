@@ -224,7 +224,7 @@ A case gets the worst status over its checks: `fail` > `error` > `soft pass` > `
   | vLLM | 0.34.0 |
   | SGLang | 0.5.20 |
   | llama.cpp | `a25c9865` |
-  | HF transformers | 5.17.0 |
+  | HF transformers | 5.23.0 |
   | Ollama | `7af39318` (built-in parsers) |
   | mlx-lm | 0.32.2 (needs mlx: macOS arm64, or Linux through the `mlx-cpu` wheels; not in the committed snapshot yet) |
 
