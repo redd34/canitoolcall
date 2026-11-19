@@ -119,6 +119,7 @@ def test_parser_selection(family: str, model: str, thinking: bool | None, parser
         ("nemotron", "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16"),
         ("nemotron", "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-Base-BF16"),
         ("nemotron", "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-GenRM"),
+        ("seed-oss", "ByteDance-Seed/Seed-OSS-36B-Instruct"),
     ],
 )
 def test_unsupported_is_honest(family: str, model: str) -> None:

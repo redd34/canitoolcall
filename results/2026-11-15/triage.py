@@ -316,9 +316,13 @@ finding("transformers-gemma4-malformed-call-raises", "transformers", "engine_bug
         "Gemma 4 response_template raises 'json parser could not parse region as JSON' on a call without an argument object, instead of returning no call or the text as content.",
         lambda c, fid: fid == "gemma4/vllm-malformed-no-brace",
         notes="Recovery contract section 4: the fixture does not accept exception.")
+finding("transformers-gemma4-content-overwritten", "transformers", "engine_bug",
+        "Gemma 4 response_template: in non-streaming, text after a call replaces the text before it ('Some text before … after' -> 'after'); streaming keeps both.",
+        lambda c, fid: fid == "gemma4/sglang-text-around-call",
+        notes="content is the template's implicit field and is declared without repeats/join (google/gemma-4-31B-it@842da379 tokenizer_config.json), so ResponseParser._close_current (transformers 5.17.0, src/transformers/utils/chat_parsing/response_parser.py L362-373) assigns each closed content segment over the previous one. Streaming forwards every region_chunk, so it keeps both segments. Neither Gemma 4 test in tests/utils/test_chat_parsing.py at v5.17.0 (L554-610) has text around a call. Per docs/formats/gemma4.md, Gemma 4 stops at <|tool_response>, so text after a call reaches the parser only if the model does not stop there; vllm-gemma4-text-around-call rests on the same SGLang engine test. Not covered by a fixture: a whitespace-only gap between two calls wipes the earlier text the same way.")
 drops_finding("transformers")
 finding("transformers-other", "transformers", "untriaged_discrepancy",
-        "Other transformers discrepancies (text around a Gemma call dropped in non-streaming).",
+        "Other transformers discrepancies.",
         lambda c, fid: True)
 
 assigned = collections.defaultdict(list)

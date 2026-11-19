@@ -1,11 +1,11 @@
 """vLLM adapter: replays fixtures through vLLM's real tool/reasoning parsers.
 
-Runs in ``.venvs/vllm`` (built by ``scripts/engines/vllm.sh``: the vLLM 0.30.0
+Runs in ``.venvs/vllm`` (built by ``scripts/engines/vllm.sh``: the vLLM 0.34.0
 manylinux wheel unzipped under ``.engines/vllm/`` and added via ``.pth``, CPU
 torch, no model weights). vLLM is imported lazily, inside methods, so this
 module loads with the standard library only.
 
-Every step mirrors what vLLM 0.30.0's OpenAI server does for
+Every step mirrors what vLLM 0.34.0's OpenAI server does for
 ``/v1/chat/completions`` with ``--enable-auto-tool-choice``
 (``vllm/entrypoints/openai/chat_completion/serving.py`` and
 ``vllm/renderers/online_renderer.py``):
@@ -16,21 +16,24 @@ Every step mirrors what vLLM 0.30.0's OpenAI server does for
    derives from ``config.json`` architectures, else ``auto``.
 2. **Parser class:** ``ParserManager.get_parser(tool_parser_name,
    reasoning_parser_name, enable_auto_tools=True, model_name=repo,
-   is_harmony=(model_type == "gpt_oss"))``.
+   is_harmony=(model_type == "gpt_oss"), tokenizer=tok)``. With a tokenizer,
+   vLLM checks at startup that the parsers can be built for it.
 3. **Request:** a ``ChatCompletionRequest`` with the fixture's tools and
    ``tool_choice="auto"`` (both omitted when the fixture offers no tools, as
    a client would), and ``chat_template_kwargs`` from the fixture's
-   ``thinking`` flag. A throwaway parser instance runs
-   ``adjust_request(request)`` first, under the same condition as
-   ``OnlineRenderer.preprocess_chat``. Many parsers force
-   ``skip_special_tokens=False`` there.
+   ``thinking`` flag. A throwaway parser instance gets
+   ``set_prompt_token_ids(prompt_ids)`` and then runs
+   ``adjust_request(request)``, under the same condition as
+   ``OnlineRenderer.preprocess_chat`` (including ``always_adjust_request``).
+   Many parsers force ``skip_special_tokens=False`` there.
 4. **Prompt ids:** the renderer vLLM would pick for the tokenizer mode renders
    one user turn plus the tools with ``add_generation_prompt=True``. The ids are
    passed to ``parse_delta(prompt_token_ids=...)``, as serving does; without
    them ``reasoning_ended`` is never set.
 5. **Text:** each id group goes through the v1 ``IncrementalDetokenizer``
    (never ``tok.decode``), built from ``request.to_sampling_params(...)``.
-6. **Parse:** non-streaming ``p.parse(text, request, enable_auto_tools=True,
+6. **Parse:** non-streaming ``p.set_prompt_token_ids(prompt_ids)`` then
+   ``p.parse(text, request, enable_auto_tools=True,
    model_output_token_ids=ids)``; streaming ``p.parse_delta(delta_text,
    delta_ids, request, prompt_token_ids=..., finished=last)``. The parser
    instances get ``chat_template_kwargs`` exactly as serving builds them.
@@ -106,7 +109,7 @@ def _rule(pattern: str, tool: str, reasoning: str | None, source: str) -> ModelR
     return ModelRule(pattern, ParserChoice(tool, reasoning, source))
 
 
-# Every name below is registered in vLLM 0.30.0 (ToolParserManager /
+# Every name below is registered in vLLM 0.34.0 (ToolParserManager /
 # ReasoningParserManager.list_registered(); checked by the engine tests).
 # Rules are tried in order and the first match wins, so specific rules go
 # before general ones.
@@ -138,22 +141,22 @@ PARSERS: dict[str, tuple[ModelRule, ...]] = {
     ),
     "gpt-oss": (_rule(r"gpt-oss", "openai", "openai_gptoss", "vLLM gpt-oss recipe; HarmonyParser (is_harmony)"),),
     "deepseek": (
-        _rule(r"DeepSeek-V4\.1", "deepseek_v41", "deepseek_v41", "docs/formats/deepseek.md (vLLM v0.30.0 row)"),
-        _rule(r"DeepSeek-V4", "deepseek_v4", "deepseek_v4", "docs/formats/deepseek.md (vLLM v0.30.0 row)"),
-        _rule(r"DeepSeek-V3\.2", "deepseek_v32", "deepseek_v3", "docs/formats/deepseek.md (vLLM v0.30.0 row)"),
-        _rule(r"DeepSeek-V3\.1", "deepseek_v31", "deepseek_v3", "docs/formats/deepseek.md (vLLM v0.30.0 row)"),
-        _rule(r"DeepSeek-R1", "deepseek_v3", "deepseek_r1", "docs/formats/deepseek.md (vLLM v0.30.0 row)"),
+        _rule(r"DeepSeek-V4\.1", "deepseek_v41", "deepseek_v41", "docs/formats/deepseek.md (vLLM v0.34.0 row)"),
+        _rule(r"DeepSeek-V4", "deepseek_v4", "deepseek_v4", "docs/formats/deepseek.md (vLLM v0.34.0 row)"),
+        _rule(r"DeepSeek-V3\.2", "deepseek_v32", "deepseek_v3", "docs/formats/deepseek.md (vLLM v0.34.0 row)"),
+        _rule(r"DeepSeek-V3\.1", "deepseek_v31", "deepseek_v3", "docs/formats/deepseek.md (vLLM v0.34.0 row)"),
+        _rule(r"DeepSeek-R1", "deepseek_v3", "deepseek_r1", "docs/formats/deepseek.md (vLLM v0.34.0 row)"),
         _rule(r"DeepSeek-V3", "deepseek_v3", None, "docs/formats/deepseek.md (V3: no reasoning)"),
     ),
     "kimi": (
-        _rule(r"Kimi-K3", "kimi_k3", "kimi_k3", "docs/formats/kimi.md (vLLM v0.30.0 row)"),
+        _rule(r"Kimi-K3", "kimi_k3", "kimi_k3", "docs/formats/kimi.md (vLLM v0.34.0 row)"),
         _rule(
             r"Kimi-K2-Instruct",
             "kimi_k2",
             None,
             "Kimi-K2-Instruct model card: non-thinking; --tool-call-parser kimi_k2",
         ),
-        _rule(r"Kimi-K2", "kimi_k2", "kimi_k2", "docs/formats/kimi.md (vLLM v0.30.0 row; thinking K2.x)"),
+        _rule(r"Kimi-K2", "kimi_k2", "kimi_k2", "docs/formats/kimi.md (vLLM v0.34.0 row; thinking K2.x)"),
     ),
     "glm": (
         _rule(
@@ -162,11 +165,20 @@ PARSERS: dict[str, tuple[ModelRule, ...]] = {
             "glm45",
             "GLM-4.5/4.6 model cards: --tool-call-parser glm45 --reasoning-parser glm45",
         ),
-        _rule(r"GLM-(4\.7|5)", "glm47", "glm47", "docs/formats/glm.md (vLLM v0.30.0 row)"),
+        _rule(r"GLM-(4\.7|5)", "glm47", "glm47", "docs/formats/glm.md (vLLM v0.34.0 row)"),
+    ),
+    "minimax": (
+        _rule(
+            r"MiniMax-M2(?!\d)",
+            "minimax_m2",
+            "minimax_m2",
+            "docs/formats/minimax.md (vLLM v0.34.0 row); the model cards use minimax_m2_append_think, "
+            "which keeps <think> in content",
+        ),
     ),
     "llama": (
-        _rule(r"Llama-4", "llama4_pythonic", None, "docs/formats/llama.md (vLLM v0.30.0 row)"),
-        _rule(r"Llama-3", "llama3_json", None, "docs/formats/llama.md (vLLM v0.30.0 row)"),
+        _rule(r"Llama-4", "llama4_pythonic", None, "docs/formats/llama.md (vLLM v0.34.0 row)"),
+        _rule(r"Llama-3", "llama3_json", None, "docs/formats/llama.md (vLLM v0.34.0 row)"),
     ),
     "mistral": (
         _rule(
@@ -177,7 +189,7 @@ PARSERS: dict[str, tuple[ModelRule, ...]] = {
         ),
         _rule(r"mistral|ministral|devstral", "mistral", None, "Mistral model cards: --tool-call-parser mistral"),
     ),
-    "gemma4": (_rule(r"gemma-4", "gemma4", "gemma4", "docs/formats/gemma4.md (vLLM v0.30.0 row)"),),
+    "gemma4": (_rule(r"gemma-4", "gemma4", "gemma4", "docs/formats/gemma4.md (vLLM v0.34.0 row)"),),
     "nemotron": (
         # Only the five repos whose templates docs/formats/nemotron.md checked. Nemotron-3.5-Bolt (Gemma 4
         # based), 3.5-Super-VL, 3-Nano-Omni, the Base/GenRM and quantized repos match no rule.
@@ -190,6 +202,14 @@ PARSERS: dict[str, tuple[ModelRule, ...]] = {
             "nemotron_v3; docs/formats/nemotron.md",
         ),
     ),
+    "seed-oss": (
+        _rule(
+            r"Seed-OSS",
+            "seed_oss",
+            "seed_oss",
+            "Seed-OSS model card: --tool-call-parser seed_oss; docs/formats/seed-oss.md (vLLM v0.34.0 row)",
+        ),
+    ),
 }
 """family slug -> ordered model rules (see :func:`resolve_parsers`)."""
 
@@ -197,10 +217,18 @@ PARSERS: dict[str, tuple[ModelRule, ...]] = {
 # based on model architecture"): tokenizer_mode="auto" is replaced by these.
 ARCH_TOKENIZER_MODES: dict[str, str] = {
     "KimiK3ForConditionalGeneration": "kimi_k3",
+    "KimiK31ForConditionalGeneration": "kimi_k3",
     "DeepseekV32ForCausalLM": "deepseek_v32",
     "DeepseekV4ForCausalLM": "deepseek_v4",
     "DeepseekV4ForConditionalGeneration": "deepseek_v4",
     "DeepseekV41ForCausalLM": "deepseek_v41",
+}
+
+# vllm/renderers/registry.py (_VLLM_RENDERERS): tokenizer mode -> (module, renderer class).
+DEEPSEEK_RENDERERS: dict[str, tuple[str, str]] = {
+    "deepseek_v32": ("vllm.renderers.deepseek_v32", "DeepseekV32Renderer"),
+    "deepseek_v4": ("vllm.renderers.deepseek_v4", "DeepseekV4Renderer"),
+    "deepseek_v41": ("vllm.renderers.deepseek_v4", "DeepseekV41Renderer"),
 }
 
 MAX_TOKENS = 4096
@@ -288,10 +316,10 @@ class _Setup:
 
 
 class VllmAdapter(Adapter):
-    """vLLM 0.30.0 through its unified ``Parser`` (``ParserManager``) path."""
+    """vLLM 0.34.0 through its unified ``Parser`` (``ParserManager``) path."""
 
     name: ClassVar[str] = "vllm"
-    pinned_version: ClassVar[str] = "0.30.0"
+    pinned_version: ClassVar[str] = "0.34.0"
 
     def __init__(self) -> None:
         self._models: dict[tuple[str, str | None, str], _Model] = {}
@@ -311,7 +339,7 @@ class VllmAdapter(Adapter):
     def engine_details(self) -> dict[str, Any]:
         out: dict[str, Any] = {
             dist: _dist_version(dist)
-            for dist in ("transformers", "tokenizers", "torch", "openai-harmony", "mistral-common", "huggingface-hub")
+            for dist in ("transformers", "tokenizers", "torch", "oss-harmony", "mistral-common", "huggingface-hub")
         }
         try:
             vllm_dir = Path(_imp("vllm").__file__).resolve().parent.parent
@@ -412,6 +440,7 @@ class VllmAdapter(Adapter):
         try:
             request, parser = self._request_and_parser(setup, stream=False)
             (text,) = self._detokenize(setup, request, [ids])
+            parser.set_prompt_token_ids(setup.prompt_ids)  # chat_completion_full_generator
             reasoning, content, tool_calls = parser.parse(
                 text, request, enable_auto_tools=True, model_output_token_ids=ids
             )
@@ -521,8 +550,9 @@ class VllmAdapter(Adapter):
         info: dict[str, Any]
         if model.model_type == "gpt_oss":
             info = {
-                "source": "openai_harmony via vLLM OnlineRenderer._make_request_with_harmony (no Jinja template)",
-                "openai_harmony": _dist_version("openai-harmony"),
+                "source": "openai_harmony (oss-harmony) via vLLM OnlineRenderer._make_request_with_harmony"
+                " (no Jinja template)",
+                "oss_harmony": _dist_version("oss-harmony"),
             }
         elif mode == "mistral":
             inner = getattr(model.tok, "instruct", None)
@@ -577,6 +607,7 @@ class VllmAdapter(Adapter):
             enable_auto_tools=True,
             model_name=model.repo,
             is_harmony=is_harmony,
+            tokenizer=model.tok,
         )
         setup = _Setup(
             model=model,
@@ -622,9 +653,9 @@ class VllmAdapter(Adapter):
             # OnlineRenderer.render_chat (harmony branch): always adjusts, without chat_template_kwargs.
             setup.parser_cls(tok, request.tools, model_config=None).adjust_request(request=request)
         elif self._should_adjust_request(setup, request):
-            request = setup.parser_cls(tok, request.tools, model_config=None, chat_template_kwargs=ctk).adjust_request(
-                request=request
-            )
+            request_parser = setup.parser_cls(tok, request.tools, model_config=None, chat_template_kwargs=ctk)
+            request_parser.set_prompt_token_ids(setup.prompt_ids)
+            request = request_parser.adjust_request(request=request)
         parser = setup.parser_cls(tok, request.tools, chat_template_kwargs=ctk, model_config=None)
         return request, parser
 
@@ -640,7 +671,12 @@ class VllmAdapter(Adapter):
             and bool(tok.supports_grammar)
         )
         tool_choice = getattr(request, "tool_choice", "none")
-        return setup.parser_cls.reasoning_parser_cls is not None or tool_choice != "none" or mistral_grammar
+        return (
+            bool(getattr(setup.parser_cls, "always_adjust_request", False))
+            or setup.parser_cls.reasoning_parser_cls is not None
+            or tool_choice != "none"
+            or mistral_grammar
+        )
 
     def _render_prompt(self, setup: _Setup) -> list[int]:
         """Prompt ids exactly as the vLLM renderer for this tokenizer mode builds them."""
@@ -659,28 +695,37 @@ class VllmAdapter(Adapter):
         if setup.is_harmony:
             # OnlineRenderer.render_chat (harmony branch): openai_harmony preamble + render_for_completion.
             renderer_cls = _imp("vllm.renderers.online_renderer").OnlineRenderer
-            fake_self = SimpleNamespace(supports_browsing=False, supports_code_interpreter=False)
+            fake_self = SimpleNamespace(
+                renderer=None, reasoning_effort_map={}, supports_browsing=False, supports_code_interpreter=False
+            )
             _, (engine_input,) = renderer_cls._make_request_with_harmony(fake_self, request, tool_dicts is not None)
             return _as_ids(engine_input["prompt_token_ids"])
         if mode == "mistral":
             raw_prompt = _imp("vllm.renderers.mistral").safe_apply_chat_template(tok, messages, **kwargs)
-        elif mode in ("deepseek_v32", "deepseek_v4", "deepseek_v41"):
-            renderer_mod = "vllm.renderers.deepseek_v32" if mode == "deepseek_v32" else "vllm.renderers.deepseek_v4"
-            cls_name = "DeepseekV32Renderer" if mode == "deepseek_v32" else "DeepseekV4Renderer"
+        elif mode in DEEPSEEK_RENDERERS:
+            renderer_mod, cls_name = DEEPSEEK_RENDERERS[mode]
             renderer_cls = getattr(_imp(renderer_mod), cls_name)
             raw_prompt = renderer_cls._apply_chat_template(
                 SimpleNamespace(get_tokenizer=lambda: tok), conversation=conversation, messages=messages, **kwargs
             )
+            if mode != "deepseek_v32":
+                raw_prompt, _image_order = raw_prompt  # DeepseekV4Renderer returns (prompt, image order)
         elif mode == "kimi_k3":
             k3 = _imp("vllm.renderers.kimi_k3")
+            efforts = k3._K31_THINKING_EFFORTS if setup.model.model_type == "kimi_k31" else k3._K3_THINKING_EFFORTS
             raw_prompt = k3.KimiK3Renderer._apply_chat_template(
-                SimpleNamespace(get_tokenizer=lambda: tok), k3._normalize_k3_tool_messages(conversation), params
+                SimpleNamespace(get_tokenizer=lambda: tok, _thinking_efforts=efforts),
+                k3._normalize_k3_tool_messages(conversation),
+                params,
             )
         else:
             hf = _imp("vllm.renderers.hf")
             model_config = SimpleNamespace(
                 hf_config=SimpleNamespace(model_type=setup.model.model_type),
+                model=setup.model.repo,
+                tokenizer=setup.model.repo,
                 revision=setup.model.revision,
+                tokenizer_revision=setup.model.revision,
                 code_revision=None,
                 trust_remote_code=trusts_remote_code(setup.model.repo, setup.model.revision),
             )

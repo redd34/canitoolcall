@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        engine: [vllm, sglang, llamacpp, transformers, ollama]
+        engine: [vllm, sglang, llamacpp, transformers, ollama, mlx_lm]
     env:
       ENGINE: ${{ matrix.engine }}
     steps:
@@ -80,7 +80,15 @@ jobs:
             echo "ready=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          bash "$script"
+          # Exit code 3: the engine cannot run on this platform (mlx_lm.sh when mlx does not import).
+          code=0
+          bash "$script" || code=$?
+          if [ "$code" -eq 3 ]; then
+            echo "::notice title=${ENGINE} not run::$script says ${ENGINE} cannot run on $(uname -s) $(uname -m); this engine gets no column tonight"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [ "$code" -eq 0 ] || exit "$code"
           echo "ready=true" >> "$GITHUB_OUTPUT"
       - name: Make vocab-only GGUFs for Ollama (llama.cpp converter only)
         if: matrix.engine == 'ollama' && steps.setup.outputs.ready == 'true' && steps.gguf-cache.outputs.cache-hit != 'true'
@@ -137,7 +145,7 @@ jobs:
           fi
           ls -l results
       - name: Build the site from the results files
-        run: uv run canitoolcall matrix --results results --out site/_build
+        run: uv run canitoolcall matrix --results results --out site/_build --site-url https://redd34.github.io/canitoolcall/
       - name: Publish the agent-facing files next to the matrix
         # llms.txt at the site root is where agents look for it (https://llmstxt.org).
         run: cp llms.txt AGENTS.md site/_build/

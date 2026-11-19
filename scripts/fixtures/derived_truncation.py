@@ -25,6 +25,9 @@ be kept is left open: cuts with no complete call use ``expected_error`` with all
 outcomes accepted, and cuts that keep a call are only taken from sources with no text
 around the calls. A call whose arguments are all closed but whose close marker is cut off
 is still unfinished, and its ``reason`` names the missing marker.
+A cut that leaves every call complete, such as one before a list's closing ``]``, keeps
+all its calls: a call is complete once its own close is present, even when the enclosing
+list or section never closes.
 
 Every record keeps its source's provenance (``source_url``, ``revision``, ``license``,
 ``attribution``, ``template_sha256``) and says in ``notes`` which fixture it was cut from
@@ -416,6 +419,22 @@ CUTS: tuple[Cut, ...] = (
         "inside the arguments, at a key/value boundary (after a complete pair)",
         closed_args=1,
     ),
+    Cut(
+        "mistral/v3-single-call",
+        "before-list-close",
+        '"unit": "c"}}',
+        1,
+        "right after the call's closing brace, before the list's closing bracket",
+        keep=1,
+    ),
+    Cut(
+        "mistral/vllm-v3-parallel",
+        "before-list-close",
+        '"unit": "celsius"}}',
+        1,
+        "right after the second call's closing brace, before the list's closing bracket",
+        keep=2,
+    ),
     # ---- gpt-oss: Harmony
     Cut(
         "gpt-oss/vllm-channel-first-recipient",
@@ -575,10 +594,15 @@ def derive(src: dict[str, Any], cut: Cut) -> dict[str, Any]:
     exp = src["expected"]
     name = src["id"].split("/", 1)[1]
     provenance = dict(src["provenance"])
+    rule = (
+        "a call is complete once its own close is present, even when the enclosing list or section never closes."
+        if cut.keep == len(exp["tool_calls"])
+        else "the unfinished call must not be returned."
+    )
     notes = (
         f"Derived, not quoted: the first {len(ids)} of {len(src['output_token_ids'])} output tokens of {src['id']} "
         f"({provenance['kind']}), cut {cut.where}. Expectation by section 2 of the recovery contract ({RULE}): "
-        "the unfinished call must not be returned."
+        f"{rule}"
     )
     if provenance["kind"] == "template_render":
         notes += (

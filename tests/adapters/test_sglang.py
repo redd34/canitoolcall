@@ -125,6 +125,8 @@ def test_module_does_not_import_sglang() -> None:
         ("nemotron", "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16", "qwen3_coder", "nemotron_3"),
         ("nemotron", "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16", "qwen3_coder", "nemotron_3"),
         ("nemotron", "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16", "qwen3_coder", "nemotron_3"),
+        ("minimax", "MiniMaxAI/MiniMax-M2.7", "minimax-m2", "minimax"),
+        ("minimax", "MiniMaxAI/MiniMax-M2", "minimax-m2", "minimax"),
     ],
 )
 def test_parser_mapping(family: str, model: str, tool_parser: str, reasoning_parser: str | None) -> None:
@@ -151,6 +153,8 @@ def test_deepseek_v41_is_unsupported() -> None:
         ("nemotron", "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16"),
         ("nemotron", "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-Base-BF16"),
         ("nemotron", "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-GenRM"),
+        ("minimax", "MiniMaxAI/MiniMax-M3"),
+        ("seed-oss", "ByteDance-Seed/Seed-OSS-36B-Instruct"),
     ],
 )
 def test_unknown_pairs_are_unsupported(family: str, model: str) -> None:
@@ -167,6 +171,7 @@ def test_every_family_slug_is_mapped() -> None:
         "deepseek",
         "kimi",
         "glm",
+        "minimax",
         "llama",
         "mistral",
         "gemma4",

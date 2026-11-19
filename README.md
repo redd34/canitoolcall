@@ -8,7 +8,9 @@
 
 **caniuse for tool calling:** see whether your model's tool calls survive your inference engine's parser, streaming included.
 
-[![The CanIToolCall matrix: 9 model families × 5 inference engines, from the 2026-09-25 snapshot](https://raw.githubusercontent.com/redd34/canitoolcall/main/docs/img/matrix.png)](https://redd34.github.io/canitoolcall/)
+It is for people who serve open-weight models and build agents on them, for inference-engine maintainers checking a parser change, and for model teams shipping a new tool-call format.
+
+[![The CanIToolCall matrix: 9 model families × 5 inference engines, from the 2026-11-15 snapshot](https://raw.githubusercontent.com/redd34/canitoolcall/main/docs/img/matrix.png)](https://redd34.github.io/canitoolcall/)
 
 **Check your own server in one line** (vLLM, SGLang, llama-server, Ollama, LM Studio or any OpenAI-compatible API):
 
@@ -26,7 +28,7 @@ The same model can call tools correctly on one server and break on another. The 
 
 ```mermaid
 flowchart LR
-    M["Model<br/>writes raw text with<br/>format markers"] --> P["Inference engine's<br/>tool-call parser<br/>(vLLM, SGLang, llama.cpp,<br/>Ollama, transformers)"]
+    M["Model<br/>writes raw text with<br/>format markers"] --> P["Inference engine's<br/>tool-call parser<br/>(vLLM, SGLang, llama.cpp,<br/>Ollama, transformers, mlx-lm)"]
     P --> R["OpenAI-style response<br/>tool_calls · content ·<br/>reasoning_content"]
     R --> A["Your app or agent"]
     C(["CanIToolCall"]) -. "tests this step,<br/>offline" .-> P
@@ -38,7 +40,7 @@ Benchmarks such as BFCL measure how good a *model* is at choosing tools. CanIToo
 
 ## What we found
 
-**Every engine we tested has tool-call parser bugs.** Replaying 500 fixtures through the pinned parsers of five engines, the triage found **34 engine bugs**, plus **10 already-reported bugs** that still reproduce. (0.1 counted 22. The engine pins are unchanged; the new findings come from the [recovery contract](docs/formats/recovery.md) and its truncation fixtures. A finding is one root cause, often across many fixtures.) Two examples: multi-token streaming deltas silently drop tool calls or their arguments, and marker text such as `</tool_call>` inside a valid JSON argument breaks parsing in every engine.
+**Every engine we tested has tool-call parser bugs.** Replaying 500 fixtures through the parsers of five engines, pinned as in 0.2.0 (vLLM 0.30.0), the triage found **35 engine bugs**, plus **10 already-reported bugs** that still reproduce. (0.1 counted 22; the findings added in 0.2 came from the [recovery contract](docs/formats/recovery.md) and its truncation fixtures, not from new engine versions, and one more transformers case was triaged after 0.2.0 ([#23](https://github.com/redd34/canitoolcall/issues/23)). A finding is one root cause, often across many fixtures.) Two examples: multi-token streaming deltas silently drop tool calls or their arguments, and marker text such as `</tool_call>` inside a valid JSON argument breaks parsing in every engine.
 
 | Engine | Version | Fixtures it supports | Pass | Soft pass | Fail | Engine bugs found | Known upstream, still reproducing |
 |---|---|---:|---:|---:|---:|---:|---:|
@@ -46,9 +48,9 @@ Benchmarks such as BFCL measure how good a *model* is at choosing tools. CanIToo
 | SGLang | 0.5.20 | 476 | 200 | 70 | 206 | 11 | 0 |
 | llama.cpp | `a25c9865` | 464 | 287 | 53 | 124 | 6 | 1 |
 | Ollama | `7af39318` | 273 | 234 | 13 | 26 | 4 | 3 |
-| HF transformers | 5.17.0 | 51 | 34 | 7 | 10 | 3 | 0 |
+| HF transformers | 5.17.0 | 51 | 34 | 7 | 10 | 4 | 0 |
 
-Engines support different subsets of the fixtures, so these numbers are **not a ranking**. Some fails come from a deliberate policy (for example, output cut off by `max_tokens`), not from a mis-parse; [`triage.jsonl`](results/2026-11-15/triage.jsonl) classifies every failing case and gives a repro command for each. These numbers are from the committed [2026-11-15 snapshot](results/2026-11-15/) (the nightly, on Linux x86_64). The [2026-09-25 snapshot](results/2026-09-25/) on macOS arm64 matched Linux except one Ollama integer-overflow value that depends on the CPU.
+Engines support different subsets of the fixtures, so these numbers are **not a ranking**. Some fails come from a deliberate policy (for example, output cut off by `max_tokens`), not from a mis-parse; [`triage.jsonl`](results/2026-11-15/triage.jsonl) classifies every failing case and gives a repro command for each. These numbers are from the committed [2026-11-15 snapshot](results/2026-11-15/) (the nightly, on Linux x86_64), taken with vLLM 0.30.0 and 500 fixtures. Since then the vLLM pin is 0.34.0 and the corpus has 555 fixtures (MiniMax M2.x and Seed-OSS added); the [nightly matrix](https://redd34.github.io/canitoolcall/) replays those, and this table changes with the next committed snapshot. The [2026-09-25 snapshot](results/2026-09-25/) on macOS arm64 matched Linux except one Ollama integer-overflow value that depends on the CPU.
 
 ### Reported upstream
 
@@ -75,10 +77,10 @@ flowchart TB
     T["Official chat-template<br/>renders"] --> F
     E["Engine test-suite<br/>cases"] --> F
     B["Public bug<br/>reports"] --> F
-    F["Fixture (500 total, each with provenance)<br/>raw output · token ids · tools · expected parse"]
+    F["Fixture (555 total, each with provenance)<br/>raw output · token ids · tools · expected parse"]
     F --> N["Parse once,<br/>non-streaming"]
     F --> K["Stream it, split 8 ways<br/>one · special · token · 5 seeded random"]
-    N --> P["Each engine's own parser code<br/>vLLM · SGLang · llama.cpp · Ollama · transformers<br/>pinned versions · offline · no GPU · no weights"]
+    N --> P["Each engine's own parser code<br/>vLLM · SGLang · llama.cpp · Ollama · transformers · mlx-lm<br/>pinned versions · offline · no GPU · no weights"]
     K --> P
     P --> CH["8 checks<br/>expected match · graceful errors · stream = non-stream<br/>split invariance · no marker leakage<br/>valid JSON · schema · call order"]
     CH --> RS["Results JSON per engine"]
@@ -128,9 +130,24 @@ problems:
   parallel-calls [stream] fail: tool-call delta without an integer 'index' (clients cannot merge deltas)
 ```
 
+**Responses API.** Agent CLIs such as Codex CLI talk to local servers over the OpenAI Responses API (`/v1/responses`), not `/chat/completions`. Add `--api responses` to send the same scenarios there, with tools as `{type: "function", name, parameters}`, earlier calls and results as `function_call` / `function_call_output` items, and the stream read from `response.*` events. `--api both` runs both APIs and adds an `api` column to the table. The default is `--api chat`. The checks are the same, plus Responses stream consistency: the stream must end with `response.completed`, and `response.function_call_arguments.done` and `response.output_item.done` must agree with the deltas. The shapes and their sources are in [`docs/probe-responses-api.md`](docs/probe-responses-api.md). The MCP server's `probe` tool still sends `/chat/completions` only.
+
+```sh
+canitoolcall probe --base-url http://localhost:8000/v1 --model M --api both
+```
+
 **How it judges.** The model's exact output is unknown, so the checks are structural: a call to the right tool with arguments that match its schema, no format marker (`<tool_call>`, `<|call|>`, `[TOOL_CALLS]`, …) in `content`, tool names or arguments, and the same shape with and without streaming. Inside `reasoning_content`, reasoning delimiters such as `<think>` or Harmony's `<|channel|>` still fail, because a correct reasoning parser always strips them. Tool-call markers such as `<tool_call>` there are only a warning, because models often draft their call while thinking. A result with warnings is shown as `pass*` and the warnings are listed under the table. Warnings do not change the exit code.
 
 **Keys and safety.** No API key is sent unless you set one: the key is read from `$CANITOOLCALL_API_KEY`, or from the variable you name with `--api-key-env` (pass `--api-key-env OPENAI_API_KEY` to use that one; it is never read by default, so an exported OpenAI key cannot leak to a third-party endpoint). The key is only sent in the `Authorization` header, only to `--base-url` (redirects are not followed), and is never logged. The probe refuses to send a key over plain `http://` to a host other than localhost unless you pass `--allow-insecure`. Add `--json report.json` to keep a machine-readable report. The exit code is `0` when everything passes, `1` on failures and `2` on usage errors or an unreachable endpoint.
+
+**In GitHub Actions.** The repository is also a composite action that runs `probe` in CI, writes a results table to the job summary, uploads the JSON report as an artifact, and fails the job when a scenario fails. [`docs/github-action.md`](docs/github-action.md) lists the inputs and has a workflow that starts a server in the job:
+
+```yaml
+      - uses: redd34/canitoolcall@v0   # see docs/github-action.md for tags and SHA pinning
+        with:
+          base-url: http://localhost:11434/v1
+          model: qwen3:0.6b
+```
 
 ### Replay the offline suite
 
@@ -168,7 +185,7 @@ Every fixture is parsed once without streaming and once for each **chunking stra
 - `token`: one token per delta
 - `rand:1:8` … `rand:5:8`: five seeded random groupings
 
-Each strategy is seeded, so it produces the same deltas on every machine. Multi-token strategies only count for engines whose servers can put several tokens in one delta (vLLM, SGLang). llama-server, Ollama and transformers `serve` stream one token per event, so for them only `token` counts; the others still run and are reported as synthetic.
+Each strategy is seeded, so it produces the same deltas on every machine. Multi-token strategies only count for engines whose servers can put several tokens in one delta (vLLM, SGLang). llama-server, Ollama, transformers `serve` and `mlx_lm.server` stream one token per event, so for them only `token` counts; the others still run and are reported as synthetic.
 
 A correct parser gives the same answer however the stream is split, and the same answer as without streaming:
 
@@ -199,16 +216,17 @@ A case gets the worst status over its checks: `fail` > `error` > `soft pass` > `
 
 ### Families and engines
 
-- **Model families:** `qwen3-hermes`, `qwen3-xml`, `gpt-oss`, `deepseek`, `kimi`, `glm`, `llama`, `mistral`, `gemma4` and `nemotron`. Each has format notes with their sources in [`docs/formats/`](docs/formats/README.md).
+- **Model families:** `qwen3-hermes`, `qwen3-xml`, `gpt-oss`, `deepseek`, `kimi`, `glm`, `minimax`, `llama`, `mistral`, `gemma4`, `nemotron` and `seed-oss`. Each has format notes with their sources in [`docs/formats/`](docs/formats/README.md).
 - **Engines (pinned):**
 
   | Engine | Version |
   |---|---|
-  | vLLM | 0.30.0 |
+  | vLLM | 0.34.0 |
   | SGLang | 0.5.20 |
   | llama.cpp | `a25c9865` |
   | HF transformers | 5.17.0 |
   | Ollama | `7af39318` (built-in parsers) |
+  | mlx-lm | 0.32.2 (needs mlx: macOS arm64, or Linux through the `mlx-cpu` wheels; not in the committed snapshot yet) |
 
 - **How adapters run the parsers:**
   - Python engines: the adapter imports the engine's parser classes and calls them the way the engine's own server does.
@@ -265,6 +283,44 @@ Use `--canitoolcall-fixtures PATH` to test against your own copy of the corpus.
 **Why do engines have different fixture counts?** An engine version may simply have no parser for a model family's format. Those cases are reported as `unsupported`, and CanIToolCall never guesses in the engine's place.
 
 **What is a soft pass?** A result that differs from the expected one only in whitespace, such as a leading newline in the reasoning. It is also given when, for malformed or truncated output, streaming and non-streaming return the same calls but recover different text. The matrix shows soft passes separately from passes.
+
+**Does family or model X parse on engine Y?** Ask without a checkout: `canitoolcall lookup qwen3-hermes --engine vllm` (or a model name such as `Qwen/Qwen3.5-9B`, and `--json` for scripts). It reads the published [`matrix.json`](https://redd34.github.io/canitoolcall/matrix.json) (this works once the site has been rebuilt from a commit that includes `lookup`, which the nightly does from `main`; until then the published file has no `schema_version` and `lookup` says so, and `--matrix PATH_OR_URL` reads a newer one). The exit code is 0 whenever the lookup works, even if the status is `fail`; scripts should read `status` from `--json`. Queries of fewer than 3 characters only match exactly. The format is documented in [`spec/README.md`](spec/README.md#matrixjson).
+
+**Can I put a status badge in my README or model card?** Yes. Cell pages of the newest version of each engine have a "Badges" section with a Markdown snippet. They are [shields.io endpoint badges](https://shields.io/badges/endpoint-badge) backed by JSON the site publishes from the same data as `matrix.json`: `badges/<engine>/<family>.json` (for example `fail · 23/54 strict pass`, `soft pass · 2/3 strict pass` or `unsupported`; the count is strict passes over supported cases, not a failure rate) and `badges/<engine>.json` (for example `7/9 families pass`). Working example for the published site:
+
+```md
+![qwen3-hermes on vllm](https://img.shields.io/endpoint?url=https%3A%2F%2Fredd34.github.io%2Fcanitoolcall%2Fbadges%2Fvllm%2Fqwen3-hermes.json)
+![vllm](https://img.shields.io/endpoint?url=https%3A%2F%2Fredd34.github.io%2Fcanitoolcall%2Fbadges%2Fvllm.json)
+```
+
+If you host a fork, replace `https%3A%2F%2Fredd34.github.io%2Fcanitoolcall` with your site URL, percent-encoded (`:` as `%3A`, `/` as `%2F`). The snippets on cell pages use the URL the site was built with (`canitoolcall matrix --site-url URL`), or the published site's URL without it.
+
+**Can my agent ask this over MCP?** Yes. `pip install 'canitoolcall[mcp]'` adds `canitoolcall mcp`, a stdio [MCP](https://modelcontextprotocol.io) server with four tools: `lookup` (same answer as `canitoolcall lookup --json`), `list_families`, `list_engines` and `probe`. Claude Code: `claude mcp add canitoolcall -- uvx --from 'canitoolcall[mcp]' canitoolcall mcp`. Other clients (generic `mcpServers` JSON):
+
+```json
+{
+  "mcpServers": {
+    "canitoolcall": {
+      "command": "uvx",
+      "args": ["--from", "canitoolcall[mcp]", "canitoolcall", "mcp"]
+    }
+  }
+}
+```
+
+The lookup tools read the published `matrix.json`, or the file or URL you start the server with (`... canitoolcall mcp --matrix PATH_OR_URL`); a tool caller cannot change it.
+
+`probe` sends the scripted requests (9 scenarios, each non-streaming and streaming) to the `base_url` the caller gives it, so **the operator decides where it may go, when the server starts**, and the tool description says it sends requests. Flags:
+
+- Default: only loopback (`127.0.0.0/8`, `::1`, `localhost`) is reachable and no API key is ever sent.
+- `--allow-base-url URL` (repeatable): a base URL the tool may also target, as a prefix: the same scheme, host and port, and that path or any path below it (whole segments, so `/v1` covers `/v1/x` but not `/v10`).
+- `--allow-api-key-env VAR=URL` (repeatable): the value of `VAR` is sent only to that exact base URL (which is also allowed as a target), and only as an `Authorization` header over `https://` or loopback (a plain `http://` non-loopback URL is refused at startup). The tool's `api_key_env` argument must name a `VAR` bound to the `base_url` it asks for. There is no default key variable.
+
+Example: `canitoolcall mcp --allow-api-key-env MY_VLLM_KEY=https://vllm.internal.example/v1`.
+
+*Security note.* The tool's arguments come from a model, so a prompt-injected model must not be able to steer the server. It cannot pick a key or a host that you did not pair: unbound environment variables are never read, a key is never attached to a different URL, and refusals say only "target not allowed by server configuration" (no resolved addresses). Outside loopback, a hostname is resolved and the connection goes to the vetted address in the same step; private, link-local, CGNAT, multicast, unspecified, reserved and cloud-metadata addresses (for example `169.254.169.254`) are refused, unless you allowlisted an IP literal yourself. A loopback name must resolve to loopback. Redirects are never followed and environment proxies are ignored, so a key cannot move to another origin. The key is never logged, and it is removed (raw, `Bearer` form, base64 and percent-encoded) from every string of the returned report, even if the endpoint echoes it; keys shorter than 8 characters are never sent. Base URLs with `.`/`..` segments, encoded slashes or backslashes, control characters or port 0 are refused, and IPv6 translation forms (IPv4-mapped to a private address, 6to4, Teredo, NAT64, `::/96`, site-local) count as internal. Each response is capped at 8 MB and `2 x timeout_s`, one whole probe call at 5 minutes, and at most 2 probe calls run at once (more are refused). **Loopback is allowed by default**, so a prompt-injected model can make `probe` send its scripted POSTs to any port or service on your machine, and the first 200 bytes of an HTTP error body or a redirect `Location` come back in the result; run the server where that is acceptable, or only enable `probe` for clients you trust. Without the extra, `canitoolcall mcp` exits with an install hint and everything else works as before.
+
+**What doesn't it cover yet?** Engines are pinned to one release each, not their main branches ([#25](https://github.com/redd34/canitoolcall/issues/25)). There are no fixtures yet for MiniMax M3 ([#4](https://github.com/redd34/canitoolcall/issues/4)), and MiniMax M2.x is mapped only on vLLM and SGLang. Hosted providers are not in the matrix; you can point `probe` at one yourself ([#26](https://github.com/redd34/canitoolcall/issues/26)). The [wishlist](WISHLIST.md) has the full list.
 
 **My engine or model isn't covered.** Adding a model family or an engine adapter is designed to be a single PR. See [CONTRIBUTING.md](CONTRIBUTING.md) and the [good first issues](https://github.com/redd34/canitoolcall/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
 

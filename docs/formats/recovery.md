@@ -182,6 +182,7 @@ other `expected_error` fixture's `accept` list already follows sections 2 and 4.
 3. **Derived-cut fixtures** (done in [#42](https://github.com/redd34/canitoolcall/pull/42) by oscar030406): take a small set of cuts at structural boundaries from
    `engine_test` fixtures, not every token boundary. Tag them `x-derived-truncation` and `truncated`, and give each one
    the outcome section 2 assigns. These cuts are the evidence for the "text completed before the cut" decision.
-   Still to add: the cuts before `]` in Llama 4 pythonic and Mistral v3 call lists, now that section 2 decides
-   complete calls in an unclosed list.
+   The Mistral v3 cuts before `]` are in `fixtures/mistral/derived-truncated.jsonl`. Llama 4 pythonic gets none:
+   its tokenizer merges `)]` into one token, so no token boundary falls before `]`.
+   `llama/l4-truncated-missing-close-bracket` covers that shape.
 4. **#37:** post the recovery patch on ollama#18663, following Ollama's contribution policy.

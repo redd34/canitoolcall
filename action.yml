@@ -1,0 +1,129 @@
+# CanIToolCall probe as a GitHub Action: `uses: redd34/canitoolcall@v0`.
+# Docs and a copy-paste workflow: docs/github-action.md. Self-test: .github/workflows/action-selftest.yml.
+# Inputs reach the shell only through env: (never ${{ }} inside run:), and the API key is passed by
+# variable NAME; its value is never written to the log, the report or the summary.
+name: CanIToolCall probe
+description: Check tool calling and reasoning on a live OpenAI-compatible endpoint with `canitoolcall probe`.
+author: CanIToolCall contributors
+branding:
+  icon: check-circle
+  color: green
+
+inputs:
+  base-url:
+    description: API root of the OpenAI-compatible server, e.g. http://localhost:11434/v1.
+    required: true
+  model:
+    description: Model name to send in each request.
+    required: true
+  api-key-env:
+    description: >-
+      NAME of the environment variable holding the API key (set it from a secret in the step's env:), never the
+      key itself. Empty uses canitoolcall's default, $CANITOOLCALL_API_KEY; an unset variable means no key.
+    required: false
+    default: ""
+  args:
+    description: >-
+      Extra arguments for `canitoolcall probe`, split on whitespace (no shell quoting), e.g. "--no-stream --timeout 120".
+    required: false
+    default: ""
+  version:
+    description: canitoolcall release to install from PyPI.
+    required: false
+    default: "0.3.0"
+  package:
+    description: >-
+      Install this requirement instead of canitoolcall==<version> (passed to `uvx --from`), e.g. a local path or a git
+      URL, to test unreleased code.
+    required: false
+    default: ""
+  json-report:
+    description: >-
+      Path of the JSON report to write (relative to the working directory). An existing file there is removed first.
+      Give each probe step in a job its own path.
+    required: false
+    default: canitoolcall-probe.json
+  artifact-name:
+    description: Name of the uploaded report artifact, unique within the workflow run. Empty skips the upload.
+    required: false
+    default: canitoolcall-probe
+
+outputs:
+  exit-code:
+    description: "The probe's exit code: 0 all passed, 1 a scenario failed or errored, 2 usage error or unreachable endpoint."
+    value: ${{ steps.probe.outputs.exit-code }}
+  report:
+    description: Path of the JSON report.
+    value: ${{ steps.probe.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      with:
+        enable-cache: "false"
+        ignore-empty-workdir: "true"
+
+    - id: probe
+      shell: bash
+      env:
+        CTC_BASE_URL: ${{ inputs.base-url }}
+        CTC_MODEL: ${{ inputs.model }}
+        CTC_KEY_ENV: ${{ inputs.api-key-env }}
+        CTC_ARGS: ${{ inputs.args }}
+        CTC_VERSION: ${{ inputs.version }}
+        CTC_PACKAGE: ${{ inputs.package }}
+        CTC_REPORT: ${{ inputs.json-report }}
+      run: |
+        # A report from an earlier step or run must not stand in for this one if the probe writes none.
+        rm -f "$CTC_REPORT"
+        echo "report=$CTC_REPORT" >> "$GITHUB_OUTPUT"
+        cmd=(probe --base-url "$CTC_BASE_URL" --model "$CTC_MODEL" --json "$CTC_REPORT")
+        if [[ -n "$CTC_KEY_ENV" ]]; then
+          if [[ ! "$CTC_KEY_ENV" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+            # Do not print the value: someone may have pasted the key itself here.
+            echo "::error title=canitoolcall probe::api-key-env must be the NAME of an environment variable (letters, digits and _), not a key"
+            echo "exit-code=2" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ -z "${!CTC_KEY_ENV:-}" ]]; then
+            echo "::warning title=canitoolcall probe::\$$CTC_KEY_ENV is empty or unset, so no API key is sent"
+          fi
+          cmd+=(--api-key-env "$CTC_KEY_ENV")
+        fi
+        read -r -d '' -a extra <<< "$CTC_ARGS" || true
+        spec="${CTC_PACKAGE:-canitoolcall==$CTC_VERSION}"
+        # The server's replies are quoted in the probe's output; keep them from acting as workflow commands.
+        token="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+        echo "::stop-commands::$token"
+        rc=0
+        uvx --from "$spec" canitoolcall "${cmd[@]}" ${extra[@]+"${extra[@]}"} || rc=$?
+        echo "::$token::"
+        echo "exit-code=$rc" >> "$GITHUB_OUTPUT"
+
+    - shell: bash
+      env:
+        CTC_REPORT: ${{ steps.probe.outputs.report }}
+        CTC_RC: ${{ steps.probe.outputs.exit-code }}
+      run: |
+        if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+          # UV_LOCKED / UV_FROZEN only warn alongside --no-project.
+          env -u UV_LOCKED -u UV_FROZEN uv run --no-project --python ">=3.10" "$GITHUB_ACTION_PATH/scripts/probe_summary.py" \
+            "$CTC_REPORT" --exit-code "$CTC_RC" >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - if: inputs.artifact-name != ''
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ steps.probe.outputs.report }}
+        if-no-files-found: warn
+
+    - shell: bash
+      env:
+        CTC_RC: ${{ steps.probe.outputs.exit-code }}
+      run: |
+        if [[ "$CTC_RC" != 0 ]]; then
+          echo "::error title=canitoolcall probe::canitoolcall probe exited with code $CTC_RC (1: a scenario failed or errored; 2: usage error or unreachable endpoint)"
+          exit "$CTC_RC"
+        fi

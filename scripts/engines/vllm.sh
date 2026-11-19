@@ -15,13 +15,13 @@
 #   5. put the unpacked wheel on sys.path through a .pth file.
 # No model weights are downloaded, nothing is published.
 #
-# Env overrides: VLLM_VERSION (default 0.30.0), CANITOOLCALL_VLLM_WHEEL (use a
+# Env overrides: VLLM_VERSION (default 0.34.0), CANITOOLCALL_VLLM_WHEEL (use a
 # local copy of the exact wheel instead of downloading; the sha256 is still
 # checked against PyPI).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-VLLM_VERSION="${VLLM_VERSION:-0.30.0}"
+VLLM_VERSION="${VLLM_VERSION:-0.34.0}"
 ENGINE_DIR="$ROOT/.engines/vllm"
 SRC_DIR="$ENGINE_DIR/vllm-$VLLM_VERSION"
 VENV="$ROOT/.venvs/vllm"
@@ -56,8 +56,8 @@ print(f["filename"], f["url"], f["digests"]["sha256"])
 # JSON is only used to find the URL). Other versions fall back to PyPI's digest.
 pinned_sha() {
   case "$1" in
-    vllm-0.30.0-cp38-abi3-manylinux_2_28_aarch64.whl) echo eb3e11bab695d085098579a6eda2d602419adec3826ebfbcce9a3ffa543eb62e ;;
-    vllm-0.30.0-cp38-abi3-manylinux_2_28_x86_64.whl) echo ef52ee58c410ead0b8afb190838fa4cbcb52075596f67862a03859d984966ac4 ;;
+    vllm-0.34.0-cp38-abi3-manylinux_2_28_aarch64.whl) echo 7d96231fc141ad4b3a441292b77362b285b335ca7d1b0e2ab441d4ebde82f405 ;;
+    vllm-0.34.0-cp38-abi3-manylinux_2_28_x86_64.whl) echo 79ca4b3cd74aec08c4bf476bdf0cb15735b605ae5368526a2faae1e30f044ca2 ;;
     *) echo "" ;;
   esac
 }
@@ -103,17 +103,21 @@ uv venv -q --allow-existing -p 3.12 "$VENV"
 
 # --- 4. minimal pinned deps ---------------------------------------------------
 # The set the parser / tokenizer / detokenizer imports need, pinned to the
-# versions the adapter was verified with.
+# versions the adapter was verified with. They satisfy vLLM 0.34.0's
+# requirements/common.txt floors (huggingface_hub>=2, which transformers 5.17
+# excludes, tokenizers>=0.23.3, mistral_common>=1.13.0, aiohttp>=3.14.4 and
+# oss-harmony>=0.0.11, the `openai_harmony` fork vLLM switched to in #55128);
+# the bumped ones match vLLM's v0.34.0 requirements/test/cpu.txt.
 DEPS=(
-  "transformers==5.17.0" "tokenizers==0.23.2" "huggingface-hub==1.33.0"
+  "transformers==5.22.0" "tokenizers==0.23.3" "huggingface-hub==2.4.0"
   "pydantic==2.13.5" "openai==3.19.2" "partial-json-parser==0.2.1.1.post7" "regex==2026.9.10"
-  "openai-harmony==0.0.8" "mistral-common==1.12.0" "fastapi==0.136.3"
+  "oss-harmony==0.0.11" "mistral-common==1.13.0" "fastapi==0.136.3"
   "msgspec==0.21.1" "cachetools==7.2.0" "psutil==7.2.2" "jsonschema==4.26.0"
   "pyyaml==6.0.3" "sentencepiece==0.2.2" "tiktoken==0.14.0" "protobuf==7.36.2"
   "numpy==2.3.5" "pybase64==1.5.0" "cbor2==6.1.4" "blake3==1.0.9"
-  "cloudpickle==3.1.2" "pyzmq==27.2.0" "aiohttp==3.14.3"
+  "cloudpickle==3.1.2" "pyzmq==27.2.0" "aiohttp==3.14.5"
   "prometheus-client==0.26.0" "uvloop==0.22.1" "py-cpuinfo==9.0.0"
-  "xgrammar==0.2.8" "llguidance==1.7.6" "ijson==3.5.1"
+  "xgrammar==0.2.8" "llguidance==1.7.6" "ijson==3.5.1" "einops==0.8.1"
 )
 TORCH="torch==2.14.0"
 if [[ "$(uname -s)" == "Linux" ]]; then

@@ -114,7 +114,7 @@ Token IDs were not verified because the tokenizers are gated.
 
 | Engine | JSON format | Pythonic format |
 |---|---|---|
-| vLLM v0.30.0 | `llama3_json`, `llama4_json` (both `Llama3JsonToolParser`, `vllm/tool_parsers/llama_tool_parser.py`, `bot_token = "<\|python_tag\|>"`; also splits on `; `) | `pythonic` (`PythonicToolParser`), `llama4_pythonic` (`Llama4PythonicToolParser`) |
+| vLLM v0.34.0 | `llama3_json`, `llama4_json` (both `LlamaJsonEngineToolParser`, `vllm/tool_parsers/llama_json_engine_tool_parser.py`, grammar `vllm/parser/llama_json.py`: `TOOL_START = "<\|python_tag\|>"`, which it prepends when the output starts with `{`; calls are a `;`-separated sequence). vllm#63569 moved them to the parser engine; v0.30.0 had `Llama3JsonToolParser` in `vllm/tool_parsers/llama_tool_parser.py`. | `pythonic` (`PythonicToolParser`), `llama4_pythonic` (`Llama4PythonicToolParser`) |
 | SGLang v0.5.20 | `llama3` (`Llama32Detector`, bot `"<\|python_tag\|>"`, separator `";"`) | `pythonic` (`PythonicDetector`) |
 | llama.cpp v0.5.0 | PEG, from template (test templates above) | same |
 | Ollama v0.34.4 | generic template-driven `tools/` detection; no dedicated Llama parser in `model/parsers/` | same |

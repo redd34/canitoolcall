@@ -7,6 +7,13 @@ answer, nested and unicode arguments, a no-argument tool, forced
 non-streaming and streaming, and reports pass/fail per scenario plus a
 stream-vs-non-stream equivalence row per scenario.
 
+``--api responses`` sends the same scenarios to ``/responses`` (the OpenAI
+Responses API, used by agent CLIs such as Codex CLI) instead: tools as
+``{type: function, name, parameters}``, earlier calls and results as
+``function_call`` / ``function_call_output`` input items, and streams read from
+the ``response.*`` SSE events. ``--api both`` runs both. The judgments are the
+same; docs/probe-responses-api.md cites the shapes.
+
 Unlike the offline suite this exercises the whole stack (template, sampling,
 parser, server), so outcomes depend on the model's behaviour. Checks are
 therefore structural (a call to the right tool with schema-valid arguments,
@@ -25,16 +32,22 @@ reports, or echoed in error details.
 
 from __future__ import annotations
 
+import base64
+import contextlib
+import contextvars
+import http.client
 import ipaddress
 import json
+import re
 import socket
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any, Literal
 
@@ -42,6 +55,9 @@ from canitoolcall import __version__
 from canitoolcall.results import ParsedToolCall, ParseResult
 
 ProbeStatus = Literal["pass", "fail", "error", "skip"]
+Api = Literal["chat", "responses"]
+API_PATHS: Mapping[Api, str] = {"chat": "/chat/completions", "responses": "/responses"}
+"""The endpoint each API is sent to, relative to ``--base-url``."""
 
 SCENARIO_CHECK = "scenario"
 """``ProbeOutcome.check`` for a single request judged against its scenario."""
@@ -162,13 +178,40 @@ class Scenario:
     tool_choice: str | Mapping[str, Any] = "auto"
     extra_body: Mapping[str, Any] = field(default_factory=dict)
 
-    def request_body(self, model: str, *, stream: bool) -> dict[str, Any]:
-        """The /chat/completions JSON body for this scenario."""
+    def request_body(self, model: str, *, stream: bool, api: Api = "chat") -> dict[str, Any]:
+        """The /chat/completions (or, with ``api="responses"``, /responses) JSON body for this scenario."""
+        if api == "responses":
+            return self._responses_body(model, stream=stream)
         body: dict[str, Any] = {
             "model": model,
             "messages": [dict(m) for m in self.messages],
             "tools": [dict(t) for t in self.tools],
             "tool_choice": self.tool_choice if isinstance(self.tool_choice, str) else dict(self.tool_choice),
+            "temperature": 0,
+            "stream": stream,
+        }
+        body.update(self.extra_body)
+        return body
+
+    def _responses_body(self, model: str, *, stream: bool) -> dict[str, Any]:
+        items: list[dict[str, Any]] = []
+        for m in self.messages:
+            if m["role"] == "tool":
+                items.append({"type": "function_call_output", "call_id": m["tool_call_id"], "output": m["content"]})
+                continue
+            if m.get("content") is not None:
+                items.append({"role": m["role"], "content": m["content"]})
+            for tc in m.get("tool_calls") or ():
+                fn = tc["function"]
+                items.append(
+                    {"type": "function_call", "call_id": tc["id"], "name": fn["name"], "arguments": fn["arguments"]}
+                )
+        tc = self.tool_choice
+        body: dict[str, Any] = {
+            "model": model,
+            "input": items,
+            "tools": [{"type": "function", **t["function"]} for t in self.tools],
+            "tool_choice": tc if isinstance(tc, str) else {"type": "function", "name": tc["function"]["name"]},
             "temperature": 0,
             "stream": stream,
         }
@@ -188,10 +231,12 @@ class ProbeOutcome:
     """:data:`SCENARIO_CHECK` or :data:`EQUIVALENCE_CHECK`."""
     warnings: tuple[str, ...] = ()
     """Protocol oddities that clients may trip over but that do not fail the scenario."""
+    api: Api = "chat"
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "scenario_id": self.scenario_id,
+            "api": self.api,
             "check": self.check,
             "stream": self.stream,
             "status": self.status,
@@ -232,19 +277,19 @@ class ProbeReport:
 
     def render_text(self) -> str:
         """Human-readable table for the terminal."""
-        cells: dict[str, dict[str, str]] = {}
-        order: list[str] = []
+        cells: dict[tuple[str, str], dict[str, str]] = {}
         for o in self.outcomes:
-            if o.scenario_id not in cells:
-                cells[o.scenario_id] = {}
-                order.append(o.scenario_id)
             col = "equiv" if o.check == EQUIVALENCE_CHECK else ("stream" if o.stream else "nonstream")
-            cells[o.scenario_id][col] = o.status + ("*" if o.warnings else "")
-        headers = ("scenario", "non-stream", "stream", "stream=non-stream")
+            cells.setdefault((o.api, o.scenario_id), {})[col] = o.status + ("*" if o.warnings else "")
+        api_column = any(o.api != "chat" for o in self.outcomes)
+        headers: tuple[str, ...] = ("scenario", "non-stream", "stream", "stream=non-stream")
         rows = [
-            (sid, cells[sid].get("nonstream", "-"), cells[sid].get("stream", "-"), cells[sid].get("equiv", "-"))
-            for sid in order
+            ((api,) if api_column else ())
+            + (sid, row.get("nonstream", "-"), row.get("stream", "-"), row.get("equiv", "-"))
+            for (api, sid), row in cells.items()
         ]
+        if api_column:
+            headers = ("api", *headers)
         widths = [max(len(h), *(len(r[i]) for r in rows)) if rows else len(h) for i, h in enumerate(headers)]
 
         def line(values: Sequence[str]) -> str:
@@ -271,7 +316,7 @@ class ProbeReport:
 
 def _label(o: ProbeOutcome) -> str:
     mode = "stream=non-stream" if o.check == EQUIVALENCE_CHECK else ("stream" if o.stream else "non-stream")
-    return f"{o.scenario_id} [{mode}]"
+    return f"{o.scenario_id} [{mode if o.api == 'chat' else f'{o.api} {mode}'}]"
 
 
 # --------------------------------------------------------------------------- scenarios
@@ -467,8 +512,8 @@ class ChatResponse:
     """Protocol oddities some clients tolerate (reported, do not fail)."""
 
 
-def _endpoint(base_url: str) -> str:
-    return base_url.rstrip("/") + "/chat/completions"
+def _endpoint(base_url: str, api: Api = "chat") -> str:
+    return base_url.rstrip("/") + API_PATHS[api]
 
 
 def check_base_url(url: str) -> str:
@@ -480,7 +525,8 @@ def check_base_url(url: str) -> str:
         port = p.port  # raises ValueError for a bad port
     except ValueError as e:
         raise ValueError(f"invalid URL {url!r}: {e}") from None
-    del port
+    if port == 0:
+        raise ValueError("base URL port must not be 0")
     if p.scheme not in ("http", "https"):
         raise ValueError(f"base URL must start with http:// or https:// (got {safe_url(url) or url!r})")
     if not p.hostname:
@@ -489,7 +535,39 @@ def check_base_url(url: str) -> str:
         raise ValueError("base URL must not contain user:password@; pass the key with --api-key-env")
     if p.query or p.fragment:
         raise ValueError("base URL must not contain a query or fragment")
+    check_url_path(url)
     return url
+
+
+_CONTROL = re.compile(r"[\x00-\x20\x7f-\x9f]")
+_UNRESERVED = r"A-Za-z0-9._~\-"
+_SAFE_PATH = re.compile(
+    rf"(?:[{_UNRESERVED}/]|%(?:2[de]|3[0-9]|4[1-9a-f]|5[0-9af]|6[1-9a-f]|7[0-9ae]))*", re.IGNORECASE
+)
+"""Path characters allowed in a base URL: unreserved characters, '/', and ``%XX`` escapes that decode to
+unreserved characters only (so '%' itself, i.e. double encoding, is never accepted)."""
+
+
+def check_url_path(url: str) -> None:
+    """Reject URLs whose path could be read differently by the allowlist and by the server.
+
+    Refused: control characters or spaces anywhere, backslashes, encoded slashes, backslashes and NULs
+    (``%2f``, ``%5c``, ``%00``, any case), and ``.`` / ``..`` segments, raw or percent-encoded (``%2e``),
+    even double-encoded. ``;`` is refused, and so is any character outside ``[A-Za-z0-9._~-/]`` other than
+    ``%XX`` escapes of unreserved characters. Raises ``ValueError``.
+    """
+    if _CONTROL.search(url) or "\\" in url:
+        raise ValueError("base URL must not contain control characters, spaces or backslashes")
+    path = urllib.parse.urlsplit(url).path
+    if re.search(r"%(?:2f|5c|00)", path, re.IGNORECASE):
+        raise ValueError("base URL path must not contain encoded slashes, backslashes or NULs")
+    if ";" in path:
+        raise ValueError("base URL path must not contain ';' (matrix parameters)")
+    if not _SAFE_PATH.fullmatch(path):
+        raise ValueError("base URL path may only contain letters, digits, '._~-/' and %XX escapes of those")
+    for segment in path.split("/"):
+        if urllib.parse.unquote(segment) in (".", ".."):
+            raise ValueError("base URL path must not contain '.' or '..' segments")
 
 
 def is_loopback(url: str) -> bool:
@@ -535,6 +613,58 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 _OPENER = urllib.request.build_opener(_NoRedirect)
 
+ConnectFn = Callable[..., socket.socket]
+"""``socket.create_connection``-compatible: ``(address, timeout, source_address) -> socket``."""
+
+
+def guarded_opener(connect: ConnectFn) -> urllib.request.OpenerDirector:
+    """An opener that makes every TCP connection through ``connect`` instead of ``socket.create_connection``.
+
+    ``connect`` resolves and vets the address and connects to the vetted IP itself, so there is no gap between
+    the check and the connection (no DNS-rebinding window). Redirects are refused and environment proxies are
+    ignored (a proxy would connect on the caller's behalf, past the vetting). TLS still verifies the hostname.
+    """
+
+    def watched_connect(address: tuple[str, int], timeout: Any = None, source_address: Any = None) -> socket.socket:
+        dog = _WATCHDOG.get()
+        if dog is None:
+            return connect(address, timeout, source_address)
+        # The connect (and the TLS handshake after it) may take at most the time left to the deadline.
+        left = dog.remaining()
+        sock = connect(address, left if timeout is None else min(timeout, left), source_address)
+        dog.register(sock)
+        return sock
+
+    class _Http(http.client.HTTPConnection):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            self._create_connection = watched_connect
+
+        def connect(self) -> None:
+            super().connect()
+            if (dog := _WATCHDOG.get()) is not None and self.sock is not None:
+                dog.register(self.sock)
+
+    class _Https(http.client.HTTPSConnection):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            self._create_connection = watched_connect
+
+        def connect(self) -> None:
+            super().connect()
+            if (dog := _WATCHDOG.get()) is not None and self.sock is not None:
+                dog.register(self.sock)  # the TLS socket replaces the raw one
+
+    class _HttpHandler(urllib.request.HTTPHandler):
+        def http_open(self, req: urllib.request.Request) -> http.client.HTTPResponse:
+            return self.do_open(_Http, req)
+
+    class _HttpsHandler(urllib.request.HTTPSHandler):
+        def https_open(self, req: urllib.request.Request) -> http.client.HTTPResponse:
+            return self.do_open(_Https, req, context=getattr(self, "_context", None))
+
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect, _HttpHandler, _HttpsHandler)
+
 
 def safe_url(url: str) -> str:
     """``url`` without userinfo, query or fragment (they may carry credentials)."""
@@ -550,11 +680,47 @@ _MIN_REDACT = 8
 """Shorter keys are not redacted: replacing a 1-3 character string mangles messages."""
 
 
+def key_forms(key: str) -> list[str]:
+    """The key as it could appear in an echoed header or body: raw, ``Bearer`` form, base64 and percent-encoded."""
+    forms: set[str] = set()
+    for text in (key, f"Bearer {key}", f"Basic {key}"):
+        raw = text.encode("utf-8")
+        forms.update((text, urllib.parse.quote(text, safe=""), urllib.parse.quote_plus(text)))
+        for enc in (base64.b64encode, base64.urlsafe_b64encode):
+            b = enc(raw).decode("ascii")
+            forms.update((b, b.rstrip("=")))
+    return sorted(forms, key=len, reverse=True)  # longest first, so "Bearer <key>" goes before "<key>"
+
+
 def _redact(text: str, secret: str | None) -> str:
     if not secret or len(secret) < _MIN_REDACT:
         return text
-    for form in dict.fromkeys((secret, urllib.parse.quote(secret, safe=""), urllib.parse.quote_plus(secret))):
+    for form in key_forms(secret):
         text = text.replace(form, "***")
+    return text
+
+
+_MIN_PREFIX = 4
+
+
+def _clip_redacted(raw: bytes, n: int, secret: str | None) -> str:
+    """Redact the whole of ``raw`` (which may extend past ``n`` by the longest key form), then keep ``n`` bytes.
+
+    Redacting before truncating means a key straddling byte ``n`` is replaced whole; any trailing run that is
+    still a prefix (>= 4 chars) of a key form is dropped as well.
+    """
+    text = _redact(raw.decode("utf-8", "replace"), secret)
+    text = text.encode("utf-8")[:n].decode("utf-8", "ignore")
+    if secret and len(secret) >= _MIN_REDACT:
+        forms = key_forms(secret)
+        cut = True
+        while cut:
+            cut = False
+            for form in forms:
+                for k in range(min(len(form) - 1, len(text)), _MIN_PREFIX - 1, -1):
+                    if text.endswith(form[:k]):
+                        text, cut = text[:-k], True
+                        break
     return text
 
 
@@ -714,43 +880,341 @@ def _parse_message(payload: Mapping[str, Any], latency_s: float) -> ChatResponse
     )
 
 
+@dataclass(frozen=True)
+class ResponseLimits:
+    """Optional caps on one response (the CLI sets none; the MCP server sets all)."""
+
+    max_bytes: int | None = None
+    """Total bytes read from the body (JSON body, or all SSE lines)."""
+    deadline_s: float | None = None
+    """Wall-clock budget for the whole request, however slowly the server drips bytes."""
+    error_bytes: int = 300
+    """Bytes of an HTTP error body kept in the error message."""
+    ends_at: float | None = None
+    """``time.monotonic()`` time after which no request may still run (an overall cap on a whole probe)."""
+
+    def for_request(self) -> ResponseLimits:
+        """These limits for a request starting now: ``deadline_s`` shortened to the time left before ``ends_at``."""
+        if self.ends_at is None:
+            return self
+        left = self.ends_at - time.monotonic()
+        if left <= 0:
+            raise ProbeRequestError("probe exceeded its overall time limit")
+        return replace(self, deadline_s=left if self.deadline_s is None else min(self.deadline_s, left), ends_at=None)
+
+
+class _Budget:
+    def __init__(self, limits: ResponseLimits | None) -> None:
+        self.limit = limits.max_bytes if limits else None
+        self.deadline = time.monotonic() + limits.deadline_s if limits and limits.deadline_s else None
+        self.used = 0
+
+    def spend(self, n: int) -> None:
+        self.used += n
+        if self.limit is not None and self.used > self.limit:
+            raise ProbeRequestError(f"response larger than {self.limit} bytes")
+        if self.deadline is not None and time.monotonic() > self.deadline:
+            raise ProbeRequestError("request exceeded its overall deadline")
+
+    def lines(self, resp: Any) -> Iterator[bytes]:
+        """Lines of the body; reads whatever has arrived (``read1``) so the deadline is checked on every packet."""
+        buf = b""
+        while chunk := resp.read1(8192):
+            self.spend(len(chunk))
+            buf += chunk
+            *done, buf = buf.split(b"\n")
+            for line in done:
+                yield line + b"\n"
+        if buf:
+            yield buf
+
+    def read_all(self, resp: Any) -> bytes:
+        parts: list[bytes] = []
+        while chunk := resp.read1(65536):
+            self.spend(len(chunk))
+            parts.append(chunk)
+        return b"".join(parts)
+
+
+class _Watchdog:
+    """Shuts down the request's sockets when the wall-clock deadline passes, so a blocked connect, header
+    read, body read or error-body read ends at the deadline however slowly the server drips bytes."""
+
+    def __init__(self, seconds: float) -> None:
+        self.deadline = time.monotonic() + seconds
+        self.fired = False
+        self._socks: list[socket.socket] = []
+        self._lock = threading.Lock()
+        self._timer = threading.Timer(seconds, self._fire)
+        self._timer.daemon = True
+        self._timer.start()
+
+    def remaining(self) -> float:
+        if self.fired:
+            raise TimeoutError("request exceeded its overall deadline")
+        return max(self.deadline - time.monotonic(), 0.001)
+
+    def register(self, sock: socket.socket) -> None:
+        with self._lock:
+            self._socks.append(sock)
+            fired = self.fired
+        if fired:
+            self._kill(sock)
+
+    @staticmethod
+    def _kill(sock: socket.socket) -> None:
+        with contextlib.suppress(OSError, ValueError):
+            sock.shutdown(socket.SHUT_RDWR)
+
+    def _fire(self) -> None:
+        with self._lock:
+            self.fired = True
+            socks = list(self._socks)
+        for sock in socks:
+            self._kill(sock)
+
+    def cancel(self) -> None:
+        self._timer.cancel()
+
+
+_WATCHDOG: contextvars.ContextVar[_Watchdog | None] = contextvars.ContextVar("canitoolcall_watchdog", default=None)
+
+
+class _ResponsesAccumulator(_Accumulator):
+    """Responses API stream accumulation, the way the OpenAI SDK builds its
+    snapshot: output items announced by ``response.output_item.added`` and
+    keyed by ``output_index``, text, reasoning and argument deltas appended.
+    The ``*.done`` events, ``response.output_item.done`` items and the
+    ``response.completed`` output are then checked against the deltas."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.summary: list[str] = []
+        self.done_items: dict[int, Mapping[str, Any]] = {}
+        self.final: Mapping[str, Any] | None = None
+
+    def add_chunk(self, chunk: Mapping[str, Any]) -> None:
+        kind = chunk.get("type")
+        if kind in ("error", "response.failed"):
+            detail = (chunk.get("response") or {}).get("error") if kind == "response.failed" else chunk
+            raise ProbeRequestError(f"{kind} event in stream: {json.dumps(detail, ensure_ascii=False)[:300]}")
+        idx = chunk.get("output_index")
+        if not isinstance(idx, int):
+            if "output_index" in chunk or str(kind).startswith(("response.output_item.", "response.function_call")):
+                self._note(self.problems, f"{kind} event without an integer 'output_index'")
+            idx = -1
+        if (
+            kind == "response.output_item.added"
+            and idx >= 0
+            and (chunk.get("item") or {}).get("type") == "function_call"
+        ):
+            item = chunk["item"]
+            self.calls[idx] = {
+                "id": item.get("call_id"),
+                "name": item.get("name"),
+                "args": [item.get("arguments") or ""],
+            }
+        elif kind == "response.function_call_arguments.delta" and idx >= 0:
+            if idx not in self.calls:
+                self._note(self.problems, f"arguments delta for output {idx} before its function_call item was added")
+                self.calls[idx] = {"id": None, "name": None, "args": []}
+            delta = chunk.get("delta")
+            if not isinstance(delta, str):
+                self._note(self.problems, f"output {idx}: arguments delta is {type(delta).__name__}, not a string")
+            self.calls[idx]["args"].append(delta if isinstance(delta, str) else json.dumps(delta, ensure_ascii=False))
+        elif kind == "response.function_call_arguments.done" and idx in self.calls:
+            self.calls[idx]["done"] = chunk.get("arguments")
+        elif kind == "response.output_text.delta" and isinstance(chunk.get("delta"), str):
+            self.content.append(chunk["delta"])
+        elif kind == "response.reasoning_text.delta" and isinstance(chunk.get("delta"), str):
+            self.reasoning.append(chunk["delta"])
+        elif kind == "response.reasoning_summary_text.delta" and isinstance(chunk.get("delta"), str):
+            self.summary.append(chunk["delta"])
+        elif kind == "response.output_item.done" and idx >= 0 and isinstance(chunk.get("item"), dict):
+            self.done_items[idx] = chunk["item"]
+        elif kind in ("response.completed", "response.incomplete"):
+            self.final = chunk.get("response") or {}
+            if kind == "response.incomplete":
+                self._note(self.warnings, f"response.incomplete: {self.final.get('incomplete_details')}")
+
+    def finish(self, latency_s: float) -> ChatResponse:
+        calls: list[ParsedToolCall] = []
+        for i, idx in enumerate(sorted(self.calls)):
+            slot = self.calls[idx]
+            args = "".join(slot["args"])
+            if not slot["name"]:
+                self._note(self.problems, f"tool call {i}: no function name in its function_call item")
+            if not slot["id"]:
+                self._note(self.problems, f"tool call {i}: no call_id (function_call_output cannot refer to it)")
+            if "done" not in slot:
+                self._note(self.warnings, f"tool call {i}: no response.function_call_arguments.done event")
+            elif slot["done"] != args:
+                self._note(
+                    self.problems,
+                    f"tool call {i}: response.function_call_arguments.done has {str(slot['done'])[:80]!r}, "
+                    f"the deltas add up to {args[:80]!r}",
+                )
+            calls.append(ParsedToolCall(slot["name"] or "", args))
+        streamed = [(c.name, c.arguments_raw) for c in calls]
+        if self.final is None:
+            self._note(self.problems, "stream ended without response.completed (the OpenAI SDK raises on that)")
+
+        def calls_in(items: Sequence[Mapping[str, Any]]) -> list[tuple[str, str | None]]:
+            return [(c.name, c.arguments_raw) for c in _read_output(items, [])[2]]
+
+        item_done = calls_in([self.done_items[k] for k in sorted(self.done_items)])
+        if streamed and not item_done:
+            self._note(self.warnings, "no response.output_item.done event for the function_call items")
+        elif item_done != streamed:
+            self._note(self.problems, f"response.output_item.done items have calls {item_done}, the deltas {streamed}")
+        if self.final and self.final.get("output") and (final := calls_in(self.final["output"])) != streamed:
+            self._note(self.problems, f"response.completed output has calls {final}, the deltas {streamed}")
+        reasoning = "".join(self.reasoning) or "".join(self.summary) or None
+        return ChatResponse(
+            result=ParseResult(
+                content="".join(self.content) or None, reasoning_content=reasoning, tool_calls=tuple(calls)
+            ),
+            latency_s=latency_s,
+            finish_reason=(self.final or {}).get("status"),
+            problems=tuple(self.problems),
+            warnings=tuple(self.warnings),
+        )
+
+
+def _read_output(
+    items: Sequence[Mapping[str, Any]], problems: list[str]
+) -> tuple[str | None, str | None, list[ParsedToolCall]]:
+    """Content, reasoning and calls from Responses API output items."""
+    content: list[str] = []
+    reasoning: list[str] = []
+    summary: list[str] = []
+    calls: list[ParsedToolCall] = []
+    for item in items:
+        kind = item.get("type")
+        if kind == "message":
+            content += [p.get("text") or "" for p in item.get("content") or () if p.get("type") == "output_text"]
+        elif kind == "reasoning":
+            reasoning += [p.get("text") or "" for p in item.get("content") or () if p.get("type") == "reasoning_text"]
+            summary += [p.get("text") or "" for p in item.get("summary") or () if p.get("type") == "summary_text"]
+        elif kind == "function_call":
+            i = len(calls)
+            args = item.get("arguments")
+            if not isinstance(args, str):
+                problems.append(f"tool call {i}: arguments is {type(args).__name__}, not a JSON string")
+                args = "" if args is None else json.dumps(args, ensure_ascii=False)
+            if not item.get("call_id"):
+                problems.append(f"tool call {i}: no call_id (function_call_output cannot refer to it)")
+            if not item.get("name"):
+                problems.append(f"tool call {i}: no function name")
+            calls.append(ParsedToolCall(item.get("name") or "", args))
+    return _text("".join(content)), _text("".join(reasoning)) or _text("".join(summary)), calls
+
+
+def _parse_response(payload: Mapping[str, Any], latency_s: float) -> ChatResponse:
+    if payload.get("error") and not payload.get("output"):
+        raise ProbeRequestError(f"error response: {json.dumps(payload['error'], ensure_ascii=False)[:300]}")
+    output = payload.get("output")
+    if not isinstance(output, list):
+        raise ProbeRequestError("response has no output list")
+    problems: list[str] = []
+    content, reasoning, calls = _read_output(output, problems)
+    status = payload.get("status")
+    warnings = () if status == "completed" else (f"response status is {status!r}, not 'completed'",)
+    return ChatResponse(
+        result=ParseResult(content=content, reasoning_content=reasoning, tool_calls=tuple(calls)),
+        latency_s=latency_s,
+        finish_reason=status,
+        problems=tuple(problems),
+        warnings=warnings,
+    )
+
+
 def chat_response(
-    base_url: str, model: str, scenario: Scenario, *, stream: bool, api_key: str | None = None, timeout_s: float = 60.0
+    base_url: str,
+    model: str,
+    scenario: Scenario,
+    *,
+    stream: bool,
+    api_key: str | None = None,
+    timeout_s: float = 60.0,
+    api: Api = "chat",
+    opener: urllib.request.OpenerDirector | None = None,
+    limits: ResponseLimits | None = None,
 ) -> ChatResponse:
-    """One /chat/completions request with protocol diagnostics.
+    """One /chat/completions (or ``api="responses"``: /responses) request with protocol diagnostics.
 
     Raises :class:`ProbeRequestError` on transport/HTTP failures; its message
-    never contains ``api_key``.
+    never contains ``api_key``. With ``limits.deadline_s`` the deadline covers everything from connect
+    to the last byte (error bodies included) for openers made by :func:`guarded_opener`.
     """
-    body = json.dumps(scenario.request_body(model, stream=stream), ensure_ascii=False).encode("utf-8")
+    limits = limits.for_request() if limits else None
+    dog = _Watchdog(limits.deadline_s) if limits and limits.deadline_s and opener is not None else None
+    token = _WATCHDOG.set(dog)
+    try:
+        out = _chat_response(base_url, model, scenario, stream, api_key, timeout_s, opener, limits, api)
+    except ProbeRequestError:
+        if dog is not None and dog.fired:
+            raise ProbeRequestError("request exceeded its overall deadline") from None
+        raise
+    finally:
+        _WATCHDOG.reset(token)
+        if dog is not None:
+            dog.cancel()
+    if dog is not None and dog.fired:  # sockets were cut mid-body: the response may be partial
+        raise ProbeRequestError("request exceeded its overall deadline")
+    return out
+
+
+def _chat_response(
+    base_url: str,
+    model: str,
+    scenario: Scenario,
+    stream: bool,
+    api_key: str | None,
+    timeout_s: float,
+    opener: urllib.request.OpenerDirector | None,
+    limits: ResponseLimits | None,
+    api: Api,
+) -> ChatResponse:
+    acc_type, parse = (_ResponsesAccumulator, _parse_response) if api == "responses" else (_Accumulator, _parse_message)
+    body = json.dumps(scenario.request_body(model, stream=stream, api=api), ensure_ascii=False).encode("utf-8")
     headers = {"Content-Type": "application/json", "Accept": "text/event-stream" if stream else "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     t0 = time.monotonic()
+    budget = _Budget(limits)
     try:
-        req = urllib.request.Request(_endpoint(base_url), data=body, headers=headers, method="POST")
-        with _OPENER.open(req, timeout=timeout_s) as resp:
+        req = urllib.request.Request(_endpoint(base_url, api), data=body, headers=headers, method="POST")
+        with (opener or _OPENER).open(req, timeout=timeout_s) as resp:
             ctype = resp.headers.get("Content-Type", "")
             if stream and "text/event-stream" in ctype:
-                acc = _Accumulator()
-                for data in iter_sse_data(resp):
+                acc = acc_type()
+                for data in iter_sse_data(budget.lines(resp)):
                     if data.strip() == "[DONE]":
                         break
                     acc.add_chunk(json.loads(data))
                 return acc.finish(time.monotonic() - t0)
-            payload = json.loads(resp.read().decode("utf-8"))
-            out = _parse_message(payload, time.monotonic() - t0)
+            payload = json.loads(budget.read_all(resp).decode("utf-8"))
+            out = parse(payload, time.monotonic() - t0)
             if stream:
                 note = f"stream=true was ignored (Content-Type {ctype or 'missing'!r}, not text/event-stream)"
                 return ChatResponse(out.result, out.latency_s, out.finish_reason, (*out.problems, note), out.warnings)
             return out
     except urllib.error.HTTPError as e:
-        snippet = e.read().decode("utf-8", "replace")[:300] if e.fp is not None else ""
-        raise ProbeRequestError(_redact(f"HTTP {e.code} {e.reason}: {snippet}".strip(), api_key)) from None
+        n = limits.error_bytes if limits else 300
+        extra = max((len(f.encode("utf-8")) for f in key_forms(api_key)), default=0) if api_key else 0
+        raw = e.read(n + extra) if e.fp is not None else b""
+        snippet = _clip_redacted(raw, n, api_key)
+        reason = f" {e.reason}" if limits is None else ""
+        raise ProbeRequestError(_redact(f"HTTP {e.code}{reason}: {snippet}".strip(), api_key)) from None
+    except ProbeRequestError:
+        raise
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         raise ProbeRequestError(_redact(f"request failed: {e}", api_key)) from None
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
         raise ProbeRequestError(f"unreadable response: {e}") from None
+    except http.client.HTTPException as e:  # InvalidURL, BadStatusLine, LineTooLong, IncompleteRead ...
+        raise ProbeRequestError(_redact(f"invalid HTTP exchange: {type(e).__name__}", api_key)) from None
     except ValueError as e:  # e.g. "unknown url type" from Request()
         raise ProbeRequestError(_redact(f"invalid request URL: {e}", api_key)) from None
 
@@ -972,19 +1436,37 @@ def compare_modes(nonstream: ParseResult, stream: ParseResult) -> tuple[ProbeSta
 
 
 def _run_one(
-    base_url: str, model: str, scenario: Scenario, stream: bool, api_key: str | None, timeout_s: float
+    base_url: str,
+    model: str,
+    scenario: Scenario,
+    stream: bool,
+    api_key: str | None,
+    timeout_s: float,
+    api: Api = "chat",
+    opener: urllib.request.OpenerDirector | None = None,
+    limits: ResponseLimits | None = None,
 ) -> ProbeOutcome:
     try:
-        resp = chat_response(base_url, model, scenario, stream=stream, api_key=api_key, timeout_s=timeout_s)
+        resp = chat_response(
+            base_url,
+            model,
+            scenario,
+            stream=stream,
+            api_key=api_key,
+            timeout_s=timeout_s,
+            api=api,
+            opener=opener,
+            limits=limits,
+        )
     except ProbeRequestError as e:
-        return ProbeOutcome(scenario.id, stream, "error", _redact(str(e), api_key), 0.0)
+        return ProbeOutcome(scenario.id, stream, "error", _redact(str(e), api_key), 0.0, api=api)
     status, detail, judged = evaluate_with_warnings(scenario, resp.result)
     if resp.problems:
         protocol = "; ".join(resp.problems)
         detail = f"{protocol}; {detail}" if status == "fail" else protocol
         status = "fail"
     warnings = (*resp.warnings, *judged)
-    return ProbeOutcome(scenario.id, stream, status, detail, resp.latency_s, resp.result, warnings=warnings)
+    return ProbeOutcome(scenario.id, stream, status, detail, resp.latency_s, resp.result, warnings=warnings, api=api)
 
 
 def probe(
@@ -996,28 +1478,38 @@ def probe(
     stream_modes: Sequence[bool] = (False, True),
     timeout_s: float = 60.0,
     concurrency: int = 4,
+    apis: Sequence[Api] = ("chat",),
+    opener: urllib.request.OpenerDirector | None = None,
+    limits: ResponseLimits | None = None,
 ) -> ProbeReport:
-    """Run every scenario in every stream mode against the endpoint.
+    """Run every scenario in every stream mode against each API of the endpoint.
 
     Requests run on ``concurrency`` threads; the report order is fixed
-    (scenario order, then non-stream, stream, and the equivalence row when
-    both modes ran).
+    (API order, scenario order, then non-stream, stream, and the equivalence
+    row when both modes ran).
     """
     started = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    todo = [(sc, mode) for sc in (BUILTIN_SCENARIOS if scenarios is None else scenarios) for mode in stream_modes]
+    chosen = BUILTIN_SCENARIOS if scenarios is None else scenarios
+    todo = [(api, sc, mode) for api in apis for sc in chosen for mode in stream_modes]
     with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
-        done = list(pool.map(lambda job: _run_one(base_url, model, job[0], job[1], api_key, timeout_s), todo))
+        done = list(
+            pool.map(
+                lambda job: _run_one(base_url, model, job[1], job[2], api_key, timeout_s, job[0], opener, limits), todo
+            )
+        )
 
     outcomes: list[ProbeOutcome] = []
-    for sc in BUILTIN_SCENARIOS if scenarios is None else scenarios:
-        mine = {o.stream: o for (s, _), o in zip(todo, done, strict=True) if s is sc}
-        outcomes += [mine[m] for m in stream_modes]
-        if False in mine and True in mine:
-            ns, st = mine[False], mine[True]
-            if ns.observed is None or st.observed is None:
-                outcomes.append(ProbeOutcome(sc.id, True, "skip", "a request errored", 0.0, check=EQUIVALENCE_CHECK))
-            else:
-                status, detail = compare_modes(ns.observed, st.observed)
-                outcomes.append(ProbeOutcome(sc.id, True, status, detail, 0.0, check=EQUIVALENCE_CHECK))
+    for api in apis:
+        for sc in chosen:
+            mine = {o.stream: o for (a, s, _), o in zip(todo, done, strict=True) if a == api and s is sc}
+            outcomes += [mine[m] for m in stream_modes]
+            if False in mine and True in mine:
+                ns, st = mine[False], mine[True]
+                status, detail = (
+                    ("skip", "a request errored")
+                    if ns.observed is None or st.observed is None
+                    else compare_modes(ns.observed, st.observed)
+                )
+                outcomes.append(ProbeOutcome(sc.id, True, status, detail, 0.0, check=EQUIVALENCE_CHECK, api=api))
     finished = datetime.now(timezone.utc).isoformat(timespec="seconds")
     return ProbeReport(safe_url(base_url), model, started, tuple(outcomes), finished_at=finished)

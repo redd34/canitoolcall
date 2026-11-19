@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import badge, counts_line, legend %}
 {% set fam_name = family_names.get(cell.family, cell.family) %}
+{% set page_description = "How " ~ cell.engine ~ " " ~ cell.engine_version ~ "'s own parsers handle " ~ fam_name ~ " on recorded outputs replayed offline: " ~ cell.status.value|replace("_", " ") ~ ", with each failing fixture, its expected parse and a repro command." %}
 {% block title %}{{ fam_name }} on {{ cell.engine }} {{ cell.engine_version }} · CanIToolCall{% endblock %}
 {% block main %}
 <nav aria-label="Breadcrumb" class="crumbs">
@@ -177,6 +178,17 @@ special tokens){% if cell.multi_token_synthetic %}, or a multi-token strategy th
 </ul>
 {% endif %}
 </section>
+
+{% if badges %}
+<section aria-labelledby="badges-h">
+<h2 id="badges-h">Badges</h2>
+<p>Embed this status in an engine README or model card (shields.io endpoint badges; newest engine version only).</p>
+<p>This cell:</p>
+<pre class="repro"><code>{{ badges.cell }}</code></pre>
+<p>All supported families on {{ cell.engine }}:</p>
+<pre class="repro"><code>{{ badges.engine }}</code></pre>
+</section>
+{% endif %}
 
 {{ legend() }}
 {% endblock %}

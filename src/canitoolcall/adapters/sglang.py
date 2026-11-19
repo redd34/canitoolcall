@@ -127,6 +127,11 @@ PARSERS: dict[str, tuple[ParserRule, ...]] = {
         ParserRule("GLM-4.7", "glm47", "glm45"),
         ParserRule("GLM-5", "glm47", "glm45"),
     ),
+    "minimax": (
+        # The model cards use --reasoning-parser minimax-append-think, which keeps <think> in content;
+        # "minimax" is the detector that separates the reasoning (docs/formats/minimax.md).
+        ParserRule("MiniMax-M2", "minimax-m2", "minimax"),
+    ),
     "llama": (
         ParserRule("Llama-4", "pythonic", None),
         ParserRule("Llama-3", "llama3", None),

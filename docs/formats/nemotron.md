@@ -14,13 +14,27 @@ Nemotron-3-Nano-Omni-30B-A3B-Reasoning, the `-Base-BF16` and `-GenRM` repos, the
 
 **Adapter scope.** The vLLM, SGLang and Ollama rules name only the five BF16 repos above, so every other repo id is
 reported `unsupported` (no mapping) rather than assumed to share a template. vLLM and Ollama match the repo name to
-its end (`…-BF16$`); SGLang's rules are case-insensitive substrings, so an id that extends one of the five (such as
-`NVIDIA-Nemotron-3-Super-120B-A12B-BF16-MTPv2`) also matches there.
+its end (`…-BF16$`). SGLang's `ParserRule` only supports case-insensitive substrings, so there an id that adds a
+suffix after one of the five `…-BF16` names would also match (no such repo was found on 2026-11-19).
 
-**Why a family of its own.** The tool-call block is exactly the Qwen3-Coder XML format of [`qwen3-xml`](qwen3-xml.md),
-and every engine reuses its Qwen3-Coder tool parser. The reasoning framing is not Qwen's (`</think>\n` vs
-`</think>\n\n`, an empty `<think></think>` when thinking is off), the vocabulary is different, and vLLM, SGLang and
-Ollama each select a Nemotron-specific reasoning parser or wrapper. A separate slug keeps those results apart.
+**Why a family of its own, not a `qwen3-xml` variant.** Issue [#5](https://github.com/redd34/canitoolcall/issues/5)
+asks for a variant of an existing family when the format is the same. The tool-call block is exactly the Qwen3-Coder
+XML format of [`qwen3-xml`](qwen3-xml.md), and every engine reuses its Qwen3-Coder tool parser. What differs is
+everything around it, and that is what the engines configure per family:
+- **Reasoning parsers.** vLLM selects `nemotron_v3` and SGLang `nemotron_3` for these models (model cards, below),
+  not the `qwen3` reasoning parser (or none, for Qwen3-Coder) that the `qwen3-xml` rules select. vLLM's `nemotron_v3`
+  strips trailing reasoning whitespace and swaps reasoning and content when thinking is off and the content is empty;
+  Ollama wraps its Qwen3-Coder parser in `Nemotron3NanoParser`. A variant would mix these parser pairs into the
+  `qwen3-xml` cells.
+- **Reasoning framing.** The Qwen3.5+ templates close reasoning with `</think>\n\n` and pre-fill
+  `<think>\n\n</think>\n\n` when thinking is off. Nemotron 3 closes with `\n</think>\n`, Nemotron 3.5 with `</think>\n`
+  before a call and a bare `</think>` before an answer, and both pre-fill an empty `<think></think>` when thinking is
+  off.
+- **Vocabulary and stop tokens.** A different tokenizer (`<think>` is id 12; 151667 or 248068 in Qwen) and, for
+  Nano-4B, an `eos_token_id` that is `</s>` only.
+
+A separate slug keeps those results apart in the matrix. The maintainer decides in the PR whether to keep it or fold it
+into `qwen3-xml` as a variant.
 
 ## Format
 
@@ -180,7 +194,7 @@ llama.cpp ships the Nano template as
 
 | Engine (pin) | Tool parser | Reasoning parser |
 |---|---|---|
-| vLLM v0.30.0 | `qwen3_coder` → `Qwen3EngineToolParser` ([`vllm/tool_parsers/__init__.py#L185-L188`](https://github.com/vllm-project/vllm/blob/ced6857afa0ea7b2e3f0846a62e1394e90f15607/vllm/tool_parsers/__init__.py#L185-L188)) | `nemotron_v3` → `NemotronV3ParserReasoningAdapter` ([`vllm/reasoning/__init__.py#L127-L130`](https://github.com/vllm-project/vllm/blob/ced6857afa0ea7b2e3f0846a62e1394e90f15607/vllm/reasoning/__init__.py#L127-L130)); grammar [`vllm/parser/nemotron_v3.py`](https://github.com/vllm-project/vllm/blob/ced6857afa0ea7b2e3f0846a62e1394e90f15607/vllm/parser/nemotron_v3.py): `qwen3_config` with `strip_trailing_reasoning_whitespace=True`, and reasoning/content swapped when `enable_thinking=false` and the content is empty |
+| vLLM v0.34.0 (`62d4bc3`) | `qwen3_coder` → `Qwen3EngineToolParser` ([`vllm/tool_parsers/__init__.py#L210-L213`](https://github.com/vllm-project/vllm/blob/62d4bc3c7e33b1b6c906e233e6af2d3506c482ca/vllm/tool_parsers/__init__.py#L210-L213)) | `nemotron_v3` → `NemotronV3ParserReasoningAdapter` ([`vllm/reasoning/__init__.py#L143-L146`](https://github.com/vllm-project/vllm/blob/62d4bc3c7e33b1b6c906e233e6af2d3506c482ca/vllm/reasoning/__init__.py#L143-L146)); grammar [`vllm/parser/nemotron_v3.py`](https://github.com/vllm-project/vllm/blob/62d4bc3c7e33b1b6c906e233e6af2d3506c482ca/vllm/parser/nemotron_v3.py): `qwen3_config` with `strip_trailing_reasoning_whitespace=True`, and reasoning/content swapped when `enable_thinking=false` and the content is empty. `nemotron_v3.py` and both adapter modules are byte-identical to v0.30.0; the inherited `Qwen3Parser` gained a streaming argument-value extender |
 | SGLang v0.5.20 | `qwen3_coder` → `Qwen3CoderDetector` ([`function_call_parser.py#L98`](https://github.com/sgl-project/sglang/blob/94602c9c2b7cbdb8efd5c52802dac6a1c180089e/python/sglang/srt/function_call/function_call_parser.py#L98)) | `nemotron_3` → `Nemotron3Detector` ([`reasoning_parser.py#L1018-L1043`](https://github.com/sgl-project/sglang/blob/94602c9c2b7cbdb8efd5c52802dac6a1c180089e/python/sglang/srt/parser/reasoning_parser.py#L1018-L1043), registered at [#L2190](https://github.com/sgl-project/sglang/blob/94602c9c2b7cbdb8efd5c52802dac6a1c180089e/python/sglang/srt/parser/reasoning_parser.py#L2190)): `<think>`/`</think>`, `tool_start_token="<tool_call>"`, default from `enable_thinking` |
 | llama.cpp `a25c9865` | specialized handler "Qwen3-Coder", selected from the template ([`common/chat.cpp#L1212-L1220`](https://github.com/ggml-org/llama.cpp/blob/a25c9865fe03c954c93fd755b5d79ae86ba99750/common/chat.cpp#L1212-L1220): "Qwen3-Coder XML tool calls, also used by Nemotron Nano 3, …"). Tests: [`tests/test-chat.cpp#L2686-L2687`](https://github.com/ggml-org/llama.cpp/blob/a25c9865fe03c954c93fd755b5d79ae86ba99750/tests/test-chat.cpp#L2686-L2687) | same handler |
 | Ollama `7af39318` | `nemotron-3-nano` and `nemotron-3.5-nano` both construct `Nemotron3NanoParser` ([`model/parsers/parsers.go#L84-L85`](https://github.com/ollama/ollama/blob/7af393188defd52d370464de0d2064649cab9b41/model/parsers/parsers.go#L84-L85)), which wraps `Qwen3CoderParser` ([`model/parsers/nemotron3nano.go`](https://github.com/ollama/ollama/blob/7af393188defd52d370464de0d2064649cab9b41/model/parsers/nemotron3nano.go)). `create/metadata.go` picks the name for `nemotron_h` architectures, `nemotron-3.5-nano` only when the template contains `{reasoning effort: efficient}` (Ultra) ([#L187-L201](https://github.com/ollama/ollama/blob/7af393188defd52d370464de0d2064649cab9b41/create/metadata.go#L187-L201), [#L238-L239](https://github.com/ollama/ollama/blob/7af393188defd52d370464de0d2064649cab9b41/create/metadata.go#L238-L239)) | built in (`Nemotron3NanoParser`) |
@@ -200,7 +214,7 @@ Open engine issues that name Nemotron 3 / 3.5 (read 2026-11-19):
   then `\n</parameter>`, so a value's own trailing `\n` and the wrapper `\n` are adjacent, and the report says the
   models **generate** only one of them. The parser strips exactly one leading and one trailing newline
   (`_trim_wrapping_newlines`, present at the pin:
-  [`vllm/parser/qwen3.py#L60-L66`](https://github.com/vllm-project/vllm/blob/ced6857afa0ea7b2e3f0846a62e1394e90f15607/vllm/parser/qwen3.py#L60-L66)),
+  [`vllm/parser/qwen3.py#L62-L68`](https://github.com/vllm-project/vllm/blob/62d4bc3c7e33b1b6c906e233e6af2d3506c482ca/vllm/parser/qwen3.py#L62-L68)),
   which is correct for the template's own rendering. The issue proposes a template change plus a no-trim converter.
   The `*-trailing-newline-string` fixtures are the template-rendered form (two newlines, recoverable); there is no
   `bug_report` fixture, because the issue quotes the parsed arguments, not the raw model output.
@@ -213,7 +227,7 @@ Open engine issues that name Nemotron 3 / 3.5 (read 2026-11-19):
   (`content: null`). The suite does not pass `--reasoning-config`, so the replays do not exercise it.
 
 The tool-call parsers are the Qwen3-Coder ones, so the [`qwen3-xml`](qwen3-xml.md) edge cases apply too. Replays of
-this corpus at the pins (vLLM 0.30.0 and SGLang 0.5.20, 2026-11-19, macOS arm64; 33 fixtures: vLLM `pass=19 soft_pass=3 fail=11`, SGLang
+this corpus at the pins (vLLM 0.34.0 and SGLang 0.5.20, 2026-11-19, macOS arm64; 33 fixtures: vLLM `pass=19 soft_pass=3 fail=11`, SGLang
 `pass=3 soft_pass=19 fail=11`) show:
 
 | Fixture | Observation |

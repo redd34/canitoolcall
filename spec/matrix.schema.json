@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://redd34.github.io/canitoolcall/spec/matrix.schema.json",
+  "title": "CanIToolCall matrix.json",
+  "description": "The aggregated family x engine grid written by `canitoolcall matrix` and published as matrix.json. Readers must check schema_version before use (see spec/README.md).",
+  "type": "object",
+  "required": ["schema_version", "canitoolcall_version", "families", "engines", "cells"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$", "description": "MAJOR.MINOR. A reader must reject an unknown MAJOR." },
+    "canitoolcall_version": { "type": "string" },
+    "families": { "type": "array", "items": { "type": "string" } },
+    "family_info": {
+      "description": "Optional (present when the fixture corpus was available at build time). Lets tools resolve model names without a checkout.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["name", "models"],
+        "properties": {
+          "name": { "type": "string" },
+          "models": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "engines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "version", "commit", "run_started_at", "run_finished_at"],
+        "properties": {
+          "name": { "type": "string" },
+          "version": { "type": "string" },
+          "commit": { "type": ["string", "null"] },
+          "run_started_at": { "type": "string" },
+          "run_finished_at": { "type": "string" }
+        }
+      }
+    },
+    "cells": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["family", "engine", "engine_version", "status", "counts", "pass_rate", "stress_failures", "checks", "run_at", "page"],
+        "properties": {
+          "family": { "type": "string" },
+          "engine": { "type": "string" },
+          "engine_version": { "type": "string" },
+          "status": { "enum": ["pass", "soft_pass", "fail", "error", "unsupported"] },
+          "counts": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } },
+          "pass_rate": { "type": ["number", "null"], "minimum": 0, "maximum": 1, "description": "Strict pass rate over supported cases; null when none are supported." },
+          "stress_failures": { "type": "integer", "minimum": 0 },
+          "checks": { "type": "object", "additionalProperties": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } } },
+          "run_at": { "type": "string" },
+          "page": { "type": "string", "description": "Cell page path relative to the site root." },
+          "models": {
+            "description": "Optional per-model results: model repo id -> status, counts and pass_rate over the cell's cases whose fixture lists that model in its `models`. A fixture listing several models counts for each. Present only when every case's fixture was in the corpus at build time.",
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "required": ["status", "counts", "pass_rate"],
+              "properties": {
+                "status": { "enum": ["pass", "soft_pass", "fail", "error", "unsupported"] },
+                "counts": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } },
+                "pass_rate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

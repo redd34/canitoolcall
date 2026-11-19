@@ -52,6 +52,7 @@ FAMILY_SLUGS = (
     "mistral",
     "gemma4",
     "nemotron",
+    "seed-oss",
 )
 PIN = "a25c9865fe03c954c93fd755b5d79ae86ba99750"
 

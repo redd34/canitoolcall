@@ -6,10 +6,18 @@ rendered either as one ``chat.completion`` JSON body or as an SSE stream of
 tool calls announced by index and id, then argument fragments), the way
 OpenAI-compatible servers stream. Quirk flags reproduce protocol mistakes so
 the probe's diagnostics can be tested. No real endpoint or key is used.
+
+It also answers ``POST /responses`` (the OpenAI Responses API) from the same
+canned turns: one ``response`` object with ``reasoning`` / ``message`` /
+``function_call`` output items, or the SSE event sequence from OpenAI's
+function-calling guide (``response.output_item.added``, argument deltas,
+``response.function_call_arguments.done``, ``response.output_item.done``,
+``response.completed``). See docs/probe-responses-api.md for the sources.
 """
 
 from __future__ import annotations
 
+import itertools
 import json
 import threading
 from collections.abc import Callable, Iterator
@@ -41,6 +49,10 @@ class Canned:
     omit_id: bool = False
     ignore_stream: bool = False
     error_event: bool = False
+    done_arguments: str | None = None
+    """Responses stream: arguments sent in ``response.function_call_arguments.done`` instead of the real ones."""
+    omit_completed: bool = False
+    """Responses stream: end without the ``response.completed`` event."""
 
 
 def _chunks(text: str, n: int) -> Iterator[str]:
@@ -108,6 +120,76 @@ def render_sse(c: Canned, model: str) -> Iterator[str]:
     yield "data: [DONE]\n\n"
 
 
+def _output_items(c: Canned) -> list[dict[str, Any]]:
+    """The canned turn as Responses API output items."""
+    items: list[dict[str, Any]] = []
+    if c.reasoning is not None:
+        part = {"type": "reasoning_text", "text": c.reasoning}
+        items.append({"type": "reasoning", "id": "rs_0", "summary": [], "content": [part]})
+    if c.content is not None:
+        text = {"type": "output_text", "text": c.content, "annotations": []}
+        items.append({"type": "message", "id": "msg_0", "role": "assistant", "status": "completed", "content": [text]})
+    for i, (name, args) in enumerate(c.tool_calls):
+        call: dict[str, Any] = {"type": "function_call", "id": f"fc_{i}", "name": name, "arguments": args}
+        if not c.omit_id:
+            call["call_id"] = f"call_{i}"
+        items.append({**call, "status": "completed"})
+    return items
+
+
+def render_responses_json(c: Canned, model: str) -> dict[str, Any]:
+    out = _output_items(c)
+    return {
+        "id": "resp_mock",
+        "object": "response",
+        "model": model,
+        "status": "completed",
+        "error": None,
+        "output": out,
+    }
+
+
+def render_responses_sse(c: Canned, model: str) -> Iterator[str]:
+    seq = itertools.count()
+
+    def ev(type_: str, **fields: Any) -> str:
+        body = {"type": type_, "sequence_number": next(seq), **fields}
+        return f"event: {type_}\ndata: {json.dumps(body, ensure_ascii=False)}\n\n"
+
+    resp: dict[str, Any] = {"id": "resp_mock", "object": "response", "model": model, "status": "in_progress"}
+    yield ev("response.created", response={**resp, "output": []})
+    if c.error_event:
+        yield ev("error", code="mock", message="boom", param=None)
+        return
+    items = _output_items(c)
+    for idx, item in enumerate(items):
+        ids = {"item_id": item["id"], "output_index": idx}
+        if item["type"] == "reasoning":
+            yield ev("response.output_item.added", output_index=idx, item={**item, "content": []})
+            for piece in _chunks(c.reasoning or "", c.fragment):
+                yield ev("response.reasoning_text.delta", **ids, content_index=0, delta=piece)
+            yield ev("response.reasoning_text.done", **ids, content_index=0, text=c.reasoning)
+        elif item["type"] == "message":
+            yield ev("response.output_item.added", output_index=idx, item={**item, "content": []})
+            part = {"type": "output_text", "text": "", "annotations": []}
+            yield ev("response.content_part.added", **ids, content_index=0, part=part)
+            for piece in _chunks(c.content or "", c.fragment):
+                yield ev("response.output_text.delta", **ids, content_index=0, delta=piece, logprobs=[])
+            yield ev("response.output_text.done", **ids, content_index=0, text=c.content, logprobs=[])
+            yield ev("response.content_part.done", **ids, content_index=0, part={**part, "text": c.content})
+        else:
+            yield ev(
+                "response.output_item.added", output_index=idx, item={**item, "arguments": "", "status": "in_progress"}
+            )
+            for piece in _chunks(item["arguments"], c.fragment):
+                yield ev("response.function_call_arguments.delta", **ids, delta=piece)
+            done = item["arguments"] if c.done_arguments is None else c.done_arguments
+            yield ev("response.function_call_arguments.done", **ids, arguments=done)
+        yield ev("response.output_item.done", output_index=idx, item=item)
+    if not c.omit_completed:
+        yield ev("response.completed", response={**resp, "status": "completed", "output": items})
+
+
 def _args(obj: dict[str, Any]) -> str:
     return json.dumps(obj, ensure_ascii=False)
 
@@ -154,8 +236,9 @@ Responder = Callable[[str, bool, dict[str, Any]], Canned]
 
 
 def scenario_id_for(body: dict[str, Any], scenarios: tuple[Scenario, ...] = BUILTIN_SCENARIOS) -> str:
+    api, key = ("chat", "messages") if "messages" in body else ("responses", "input")
     for sc in scenarios:
-        if body["messages"] == [dict(m) for m in sc.messages]:
+        if body[key] == sc.request_body("m", stream=False, api=api)[key]:
             return sc.id
     raise KeyError("unknown scenario")
 
@@ -203,9 +286,14 @@ def _handler(mock: MockOpenAI) -> type[BaseHTTPRequestHandler]:
             body = json.loads(raw)
             with mock.lock:
                 mock.requests.append((dict(self.headers.items()), body))
-            if self.path != "/v1/chat/completions":
+            renderers = {
+                "/v1/chat/completions": (render_json, render_sse),
+                "/v1/responses": (render_responses_json, render_responses_sse),
+            }
+            if self.path not in renderers:
                 self._send(404, "application/json", b'{"error": {"message": "not found"}}')
                 return
+            as_json, as_sse = renderers[self.path]
             stream = bool(body.get("stream"))
             canned = mock.responder(scenario_id_for(body), stream, body)
             if canned.status != 200:
@@ -217,12 +305,12 @@ def _handler(mock: MockOpenAI) -> type[BaseHTTPRequestHandler]:
                 self.send_header("Content-Type", "text/event-stream; charset=utf-8")
                 self.send_header("Connection", "close")
                 self.end_headers()
-                for event in render_sse(canned, body["model"]):
+                for event in as_sse(canned, body["model"]):
                     self.wfile.write(event.encode("utf-8"))
                     self.wfile.flush()
                 self.close_connection = True
                 return
-            payload = json.dumps(render_json(canned, body["model"]), ensure_ascii=False).encode("utf-8")
+            payload = json.dumps(as_json(canned, body["model"]), ensure_ascii=False).encode("utf-8")
             self._send(200, "application/json", payload)
 
     return Handler

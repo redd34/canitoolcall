@@ -14,10 +14,12 @@ These notes are the reference for writing fixtures. Every rendered example in th
 | [`deepseek`](deepseek.md) | DeepSeek V3/R1 → V3.1 → V3.2 → V4 → V4.1 | DeepSeek-V4.1-Flash, V4-Flash(-0731), V4-Pro, V3.2, V3.1, R1-0528 | 5 incompatible formats: full-width `<｜tool▁calls▁begin｜>` tokens (V3/R1, V3.1), then DSML XML (V3.2 `function_calls`, V4 `tool_calls`, V4.1 ` calls`) |
 | [`kimi`](kimi.md) | Kimi K2.x and K3 | Kimi-K2-Instruct(-0905), K2-Thinking, K2.5, K2.6, K2.7-Code, K3 | K2: `<\|tool_calls_section_begin\|>…<\|tool_call_begin\|>functions.NAME:IDX<\|tool_call_argument_begin\|>{…}`; K3: "XTML" `<\|open\|>call tool="…"<\|sep\|>…` |
 | [`glm`](glm.md) | GLM-4.5, 4.6, 4.7, 5.x | GLM-5.3, GLM-5.3-Flash, GLM-5.2, GLM-4.7(-Flash), GLM-4.5 | `<tool_call>NAME<arg_key>K</arg_key><arg_value>V</arg_value></tool_call>` |
+| [`minimax`](minimax.md) | MiniMax M2, M2.1, M2.5, M2.7 | MiniMax-M2.7, M2.5, M2.1, M2 | `<minimax:tool_call>\n<invoke name="NAME">\n<parameter name="K">V</parameter>…`; the generation prompt opens `<think>` |
 | [`llama`](llama.md) | Llama 3.1, 3.2, 3.3 and 4 | Llama-3.1-8B, 3.2-1B/3B, 3.3-70B, Llama-4-Scout/Maverick | 3.1/3.3: bare JSON `{"name":…, "parameters":…}`; 3.2/4: pythonic `[f(a=1)]` |
 | [`mistral`](mistral.md) | Mistral, Magistral, Devstral, Ministral | Mistral-Small-4, Mistral-Medium-3.5, Ministral-3, Devstral-2, Magistral-2509, Mistral-Small-3.2 | depends on tokenizer version: `[TOOL_CALLS][{…}]` (v3/v7), `[TOOL_CALLS]NAME[CALL_ID]ID[ARGS]{…}` (v11), `[TOOL_CALLS]NAME[ARGS]{…}` (v13+) |
 | [`gemma4`](gemma4.md) | Gemma 4 (and a note on Gemma 3) | gemma-4-31B-it, 26B-A4B-it, 12B-it, E4B/E2B-it | `<\|tool_call>call:NAME{key:<\|"\|>str<\|"\|>,n:3}<tool_call\|>`: **not JSON** |
 | [`nemotron`](nemotron.md) | NVIDIA Nemotron 3 and 3.5 (added 2026-11-19) | Nemotron-3-Nano-4B, 3-Nano-30B-A3B, 3-Super-120B-A12B, 3.5-Lightning-30B-A3B, 3-Ultra-550B-A55B | the `qwen3-xml` call block (`<tool_call>\n<function=NAME>\n<parameter=K>\nV\n</parameter>…`) + `<think>` pre-filled; before a call it closes with `\n</think>\n` (3) or `</think>\n` (3.5), before an answer with `\n</think>\n` (3) or a bare `</think>` (3.5) |
+| [`seed-oss`](seed-oss.md) | ByteDance Seed-OSS (added 2026-11) | Seed-OSS-36B-Instruct | `<seed:tool_call>\n<function=NAME>\n<parameter=K>V</parameter>…` + `<seed:think>`; non-string values are Python `str()` |
 
 Cross-family rules for malformed and truncated output are in [`recovery.md`](recovery.md) (proposed, [#36](https://github.com/redd34/canitoolcall/issues/36)).
 
@@ -34,15 +36,14 @@ The HF API was queried by author on 2026-09-25, sorted by downloads and by creat
 - **Meta:** there has been no new open-weight Llama since Llama 4 (2025-04). Llama is kept because 3.x is still among the most-downloaded instruct models (Llama-3.1-8B-Instruct has 6.2M downloads).
 
 ### Not covered yet (next candidates)
-- **MiniMax M2.x/M3 and MiniMax-H3.** High download counts, and both vLLM and SGLang have dedicated parsers (`minimax_m2`, `minimax_m3`). Formats rendered during this research, from the official templates:
-  - **M2.7** (rev `d494266`): `<minimax:tool_call>\n<invoke name="…">\n<parameter name="k">v</parameter>…`
+- **MiniMax M3 and MiniMax-H3.** M2.x is now covered by [`minimax`](minimax.md). Both vLLM and SGLang have a dedicated M3 parser (`minimax_m3`). Format rendered during this research, from the official template:
   - **M3** (rev `f0e1c1e`): `]<]minimax[>[<tool_call>` with per-key XML elements such as `<city>Zürich]<]minimax[>[</city>`
 
 ## 2. Engine versions the parser mappings refer to
 
 | Engine | Version | Commit | Where parsers live |
 |---|---|---|---|
-| vLLM | v0.30.0 (2026-09-22) | `ced6857afa0ea7b2e3f0846a62e1394e90f15607` | Names in `vllm/tool_parsers/__init__.py` and `vllm/reasoning/__init__.py`. Most grammars are now in `vllm/parser/<family>.py`, which is the new "parser engine". The `*_tool_parser.py` classes are thin adapters over it. |
+| vLLM | v0.34.0 (2026-11-16) | `62d4bc3c7e33b1b6c906e233e6af2d3506c482ca` | Names in `vllm/tool_parsers/__init__.py` and `vllm/reasoning/__init__.py`. Most grammars are now in `vllm/parser/<family>.py`, which is the new "parser engine". The `*_tool_parser.py` classes are thin adapters over it. |
 | SGLang | v0.5.20 (2026-09-18) | `94602c9c2b7cbdb8efd5c52802dac6a1c180089e` | `python/sglang/srt/function_call/function_call_parser.py` (`ToolCallParserEnum`), `python/sglang/srt/parser/reasoning_parser.py` (`DetectorMap`) |
 | llama.cpp | v0.5.0 (2026-09-23) | tag `v0.5.0` | `common/chat.cpp`, `common/chat-auto-parser*.cpp`, `common/chat-peg-parser.cpp`. There are no per-model format enums any more: formats are `PEG_SIMPLE`/`PEG_NATIVE`/`PEG_GEMMA4`/`PEG_MINIMAX_M3`, derived from the chat template. Test templates are in `models/templates/`. |
 | Ollama | v0.34.4 (2026-09-23) | tag `v0.34.4` | `model/parsers/parsers.go` (names such as `qwen3`, `qwen3.5`, `qwen3-coder`, `harmony`, `deepseek3`, `glm-4.7`, `gemma4`, `ministral`). Other families go through the generic template-driven `tools/` package. |

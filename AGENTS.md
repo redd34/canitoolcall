@@ -4,7 +4,7 @@ This is a guide for AI coding agents, and the humans running them, working on or
 
 ## What this project is
 
-CanIToolCall is a neutral conformance suite and public matrix for **tool-call and reasoning parsers** in inference engines (vLLM, SGLang, llama.cpp, Ollama and HF transformers).
+CanIToolCall is a neutral conformance suite and public matrix for **tool-call and reasoning parsers** in inference engines (vLLM, SGLang, llama.cpp, Ollama, HF transformers and mlx-lm).
 
 - **Fixtures** are recorded raw model outputs with an expected parse and a provenance record.
 - **Adapters** replay the fixtures through each engine's *own* parser code, offline, and then **checks** judge the results.
@@ -25,7 +25,7 @@ uv sync                                   # dev env (Python >= 3.10)
 uv run pytest -q                          # tests; engine tests skip if the engine env is absent
 uv run ruff check src tests scripts && uv run ruff format --check src tests scripts && uv run mypy
 uv run canitoolcall validate              # fixtures against the spec
-bash scripts/engines/<engine>.sh          # isolated, pinned engine env (vllm, sglang, transformers, llamacpp, ollama)
+bash scripts/engines/<engine>.sh          # isolated, pinned engine env (vllm, sglang, transformers, llamacpp, ollama, mlx_lm)
 uv run canitoolcall run --engine <engine> --family <slug> --env HF_HUB_OFFLINE=1
 uv run python scripts/engines/prefetch_hf.py   # tokenizer/template files only, never weights
 ```
@@ -33,6 +33,10 @@ uv run python scripts/engines/prefetch_hf.py   # tokenizer/template files only, 
 - **Windows:** the engine setup scripts are bash and assume a POSIX environment. Use WSL2 (Ubuntu) for anything under `scripts/engines/`. The core suite (`uv run pytest`) is meant to run natively too; engine tests skip themselves.
 - **Hosts with a GPU:** parser replay never needs one. `canitoolcall run` starts SGLang workers with `CUDA_VISIBLE_DEVICES=-1` (and `sglang.sh` does the same for its smoke test), because otherwise SGLang takes CUDA-only imports such as `flashinfer` that the CPU-only env lacks. You don't need to set it yourself, and it replaces a value your shell already exports. To opt out, pass `--env CUDA_VISIBLE_DEVICES=<ids>` (`run` and `verify_upstream_pr.py` both accept `--env`). The vLLM env gets CPU-only torch on Linux and the transformers env has no torch, so neither needs this. If you start a worker by hand, set the variable yourself.
 - **CI on your first PR:** GitHub holds workflow runs from a new contributor until a maintainer approves them, so your PR's checks may show "waiting". Running the same `ci` workflow in your fork and linking that run in the PR is welcome and speeds review. It doesn't replace the approval.
+
+## Ask the matrix over MCP
+
+`pip install 'canitoolcall[mcp]'` adds a stdio MCP server: `uvx --from 'canitoolcall[mcp]' canitoolcall mcp [--matrix PATH_OR_URL] [--allow-base-url URL] [--allow-api-key-env VAR=URL]`. Tools: `lookup`, `list_families`, `list_engines`, `probe`. Claude Code: `claude mcp add canitoolcall -- uvx --from 'canitoolcall[mcp]' canitoolcall mcp`; generic clients use `{"mcpServers": {"canitoolcall": {"command": "uvx", "args": ["--from", "canitoolcall[mcp]", "canitoolcall", "mcp"]}}}`. `probe` sends requests, but only to loopback unless the operator allowed more at startup with `--allow-base-url`, and it sends an API key only if the operator bound a variable to that exact URL with `--allow-api-key-env VAR=URL`; refusals are generic by design. Use it only for a server the person you work for named. Details and the security note are in the README FAQ.
 
 ## Ready-made tasks
 
@@ -63,7 +67,7 @@ fixtures replayed: 48   fixed: 3   regressed: 0   other changes: 0
 
 Runs since this change also print "(N unsupported)" on the `fixtures replayed` line.
 
-The exit code is 0 when nothing regressed, 1 on a regression, and 3 if the PR can't be replayed on the pinned engine or its replay reports are invalid or incomplete (including mismatched fixture inventories).
+The exit code is 0 when nothing regressed, 1 on a regression, and 3 if the PR can't be replayed on the pinned engine or its replay reports are invalid or incomplete (including mismatched fixture inventories). Both the Python and compiled routes run these report checks from `scripts/replay_report.py`.
 
 **Report in the tracking issue here**, not only upstream. Paste the output and the base and head SHAs. The `fixtures replayed` line also gives the `unsupported` count (and the JSON report has an `unsupported` field): those fixtures are counted but are not executed tests (the engine has no parser for that family), so include that number and treat replayed minus unsupported as the real denominator. The count is taken at the PR head. Ollama (Go) and llama.cpp (C++) rebuild complete sources into separate temporary workspaces. Use `--engine ollama --pr 18663 --family glm` and `--build-jobs 2`. Existing vocab-only GGUFs are required. See [compiled verification](docs/compiled-verification.md).
 
